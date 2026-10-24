@@ -217,17 +217,16 @@ jobs:
           echo ""
           echo "=================== buildroot 失败包日志(logs/) ==================="
           echo "SDK_ROOT=$SDK_ROOT; logs 是否存在: $([ -d logs ] && echo yes || echo no)"
-          for d in logs/package/feeds/luci/rpcd-mod-luci logs/package/feeds/luci/lucihttp logs/package/feeds/luci/luci-base logs/package/feeds/luci/liblucihttp; do
-            [ -d "$d" ] || continue
-            for f in "$d"/*.log; do
-              [ -f "$f" ] || continue
-              echo "----- $f (tail 100) -----"
-              tail -n 100 "$f"
-            done
+          echo "--- logs 目录结构(前 60 项) ---"
+          find logs -type f 2>/dev/null | head -n 60 || true
+          echo "--- 失败依赖包日志 ---"
+          for f in $(find logs -type f \( -path '*rpcd-mod-luci*' -o -path '*lucihttp*' -o -path '*luci-base*' \) 2>/dev/null); do
+            echo "===== $f (tail 120) ====="
+            tail -n 120 "$f"
           done
           echo ""
           echo "=================== logs/ 中关键错误 ==================="
-          grep -RIn --include='*.log' -E 'error:|Error [0-9]|CMake Error|No such file|command not found|undefined reference|is not installed|Please (run|install)|is required|fatal error' logs 2>/dev/null | tail -n 100 || true
+          grep -RIn -E 'error:|Error [0-9]|CMake Error|No such file|command not found|undefined reference|is required|does not exist|missing|fatal' logs 2>/dev/null | tail -n 120 || true
           echo ""
           echo "=================== 已产出的 ipk(若有) ==================="
           find bin -name '*.ipk' 2>/dev/null | head -n 30 || true
