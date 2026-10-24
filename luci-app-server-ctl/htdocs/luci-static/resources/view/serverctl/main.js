@@ -110,6 +110,107 @@ function findServer(name) {
 	return null;
 }
 
+/* Local stylesheet for the manual control board (scoped by .ctl-manual) */
+const CTL_CSS = `
+.ctl-tabs-menu,
+.ctl-tabs-menu > li > a {
+	color: inherit;
+}
+
+.ctl-tabs-menu > .cbi-tab > a {
+	border-bottom: 2px solid currentColor;
+}
+
+.ctl-manual {
+	margin-bottom: 1.75em;
+}
+
+.ctl-manual .ctl-body {
+	max-width: 720px;
+	margin: 0 auto;
+	text-align: center;
+}
+
+.ctl-manual .ctl-server-row {
+	display: flex;
+	justify-content: center;
+	align-items: center;
+	gap: 0.75em;
+	margin: 0 0 1.5em 0;
+}
+
+.ctl-manual .ctl-info {
+	margin: 0 auto 1.5em auto;
+	border-collapse: separate;
+	border-spacing: 0;
+	text-align: left;
+	background: rgba(128, 128, 128, 0.08);
+	border: 1px solid rgba(128, 128, 128, 0.4);
+	border-radius: 8px;
+}
+
+.ctl-manual .ctl-info th,
+.ctl-manual .ctl-info td {
+	padding: 0.55em 1.25em;
+	line-height: 1.8;
+	font-weight: normal;
+	border-bottom: 1px solid rgba(128, 128, 128, 0.25);
+}
+
+.ctl-manual .ctl-info tr:last-child th,
+.ctl-manual .ctl-info tr:last-child td {
+	border-bottom: 0;
+}
+
+.ctl-manual .ctl-info th {
+	width: 1%;
+	padding-right: 0.9em;
+	text-align: right;
+	white-space: nowrap;
+	font-weight: bold;
+}
+
+.ctl-manual .ctl-info td {
+	padding-left: 0.9em;
+	padding-right: 1.4em;
+	word-break: break-all;
+}
+
+.ctl-manual .ctl-info .ctl-info-value {
+	font-family: monospace;
+}
+
+.ctl-manual .ctl-pass-toggle {
+	margin-left: 0.75em;
+}
+
+.ctl-manual .ctl-actions {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: center;
+	gap: 0.6em;
+	margin: 0 0 1.5em 0;
+}
+
+.ctl-manual .ctl-output {
+	text-align: left;
+	background: #1c2128;
+	color: #d6e2f0;
+	border: 1px solid #4a5568;
+	border-radius: 6px;
+	box-shadow: none;
+	text-shadow: none;
+	padding: 1em 1.25em;
+	margin: 0 0 0.5em 0;
+	min-height: 8em;
+	max-height: 22em;
+	overflow-y: auto;
+	white-space: pre-wrap;
+	word-break: break-all;
+	line-height: 1.6;
+}
+`;
+
 const ManualSection = form.NamedSection.extend({
 	selectEl: null,
 	outputEl: null,
@@ -146,62 +247,64 @@ const ManualSection = form.NamedSection.extend({
 		self.selectEl = select;
 
 		self.infoEls = {};
-		const mkinfo = (key, label) => {
-			const v = E('span', {}, '—');
+		const mkrow = (key, label) => {
+			const v = E('span', { 'class': 'ctl-info-value' }, '—');
 			self.infoEls[key] = v;
-			return [ E('b', {}, label), ' ', v ];
+			return E('tr', {}, [ E('th', {}, label), E('td', {}, v) ]);
 		};
 
 		const infoRows = [
-			...mkinfo('name', _('Name')), E('br'),
-			...mkinfo('ip', _('IP Address')), E('br'),
-			...mkinfo('mac', _('MAC Address')), E('br'),
-			...mkinfo('user', _('Username')), E('br'),
-			...mkinfo('password', _('Password')),
+			mkrow('name', _('Name')),
+			mkrow('ip', _('IP Address')),
+			mkrow('mac', _('MAC Address')),
+			mkrow('user', _('Username'))
 		];
 
 		const passToggle = E('button', {
-			'class': 'btn cbi-button-link',
-			'style': 'margin-left:0.5em',
+			'class': 'btn cbi-button-link ctl-pass-toggle',
 			'click': () => {
 				self.passShown = !self.passShown;
 				self.updateInfo();
 			}
 		}, _('Show'));
 
-		infoRows.push(' ', passToggle);
+		const passRow = mkrow('password', _('Password'));
+		passRow.lastElementChild.appendChild(passToggle);
+		infoRows.push(passRow);
+
+		const infoTable = E('table', { 'class': 'ctl-info' }, [
+			E('tbody', {}, infoRows)
+		]);
 
 		const mkbtn = (action, cls) => {
 			const b = E('button', {
 				'class': 'btn cbi-button cbi-button-' + cls,
-				'style': 'margin:0.25em',
 				'click': () => self.handleAction(action)
 			}, actionLabel(action));
 			self.buttons.push(b);
 			return b;
 		};
 
-		const output = E('pre', {
-			'style': 'text-align:left;background:#fafafa;border:1px solid #ccc;padding:0.5em;margin:0.5em auto 0 auto;max-width:640px;min-height:2.5em;white-space:pre-wrap;word-break:break-all'
-	 }, '');
+		const output = E('pre', { 'class': 'ctl-output' }, '');
 		self.outputEl = output;
 
-		const body = E('div', { 'style': 'text-align:center;margin:0 auto;max-width:720px' }, [
-			E('div', { 'style': 'margin-bottom:0.75em' }, [
-				E('b', {}, _('Server')), ' ', select
+		const body = E('div', { 'class': 'ctl-body' }, [
+			E('div', { 'class': 'ctl-server-row' }, [
+				E('b', {}, _('Server')), select
 			]),
-			E('div', { 'style': 'margin-bottom:0.75em' }, infoRows),
-			E('div', {}, [
-				mkbtn('ping', 'action'), ' ',
-				mkbtn('sshtest', 'action'), ' ',
-				mkbtn('wake', 'positive'), ' ',
-				mkbtn('suspend', 'negative'), ' ',
+			infoTable,
+			E('div', { 'class': 'ctl-actions' }, [
+				mkbtn('ping', 'action'),
+				mkbtn('sshtest', 'action'),
+				mkbtn('wake', 'positive'),
+				mkbtn('suspend', 'negative'),
 				mkbtn('poweroff', 'negative')
 			]),
 			output
 		]);
 
-		const root = E('div', { 'class': 'cbi-section' }, [ legend, body ]);
+		const root = E('div', { 'class': 'cbi-section ctl-manual' },
+			[ legend, body, E('style', {}, CTL_CSS) ]);
 		root.setAttribute('data-ctl-area', this.ctlArea);
 		return root;
 	},
@@ -329,6 +432,14 @@ const ServerCtlMap = form.Map.extend({
 		return form.Map.prototype.renderContents.apply(this, arguments).then((mapEl) => {
 			if (this.tabPanes != null) {
 				ui.tabs.initTabGroup(this.tabPanes);
+
+				/* Tag the tab menu which initTabGroup() prepended right
+				 * before the pane wrapper, so the local stylesheet can
+				 * keep its labels readable in dark themes. */
+				const menu = this.tabPanes[0].parentNode.previousElementSibling;
+				if (menu != null && menu.classList != null)
+					menu.classList.add('ctl-tabs-menu');
+
 				this.tabPanes = null;
 			}
 
