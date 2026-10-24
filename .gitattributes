@@ -1,0 +1,37 @@
+# 文本文件在仓库中统一按 LF 存储，检出时按平台自动处理（默认）
+* text=auto
+
+# —— 强制使用 LF 换行 ——
+# 这些文件要在 Linux / OpenWrt 上运行或解析，必须是 LF，避免 CRLF 导致执行异常
+*.sh                 text eol=lf
+*.uc                 text eol=lf
+*.js                 text eol=lf
+*.json               text eol=lf
+*.css                text eol=lf
+*.html               text eol=lf
+*.po                 text eol=lf
+*.md                 text eol=lf
+*.svg                text eol=lf
+
+# Makefile（含子目录）
+Makefile             text eol=lf
+**/Makefile          text eol=lf
+
+# 无扩展名的 shell / ucode 脚本与配置（openwrt 根文件系统覆盖层）
+**/etc/init.d/*      text eol=lf
+**/etc/config/*      text eol=lf
+**/rpcd/ucode/*      text eol=lf
+**/usr/bin/*         text eol=lf
+
+# —— 二进制文件：不做换行/文本处理 ——
+*.png                binary
+*.jpg                binary
+*.jpeg               binary
+*.gif                binary
+*.ico                binary
+*.woff               binary
+*.woff2              binary
+*.ttf                binary
+*.otf                binary
+*.gz                 binary
+*.xz                 binary
