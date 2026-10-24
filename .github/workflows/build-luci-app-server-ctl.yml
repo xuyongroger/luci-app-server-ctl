@@ -141,15 +141,63 @@ jobs:
 
       - name: Compile package
         id: compile
+        shell: bash
         run: |
+          set -o pipefail
           cd "$SDK_ROOT"
           # 播种 .config：启用本包，defconfig 会据此自动带出所需依赖
           printf 'CONFIG_PACKAGE_%s=m\n' "$PKG_NAME" >> .config
-          make defconfig
+          make defconfig 2>&1 | tee "$GITHUB_WORKSPACE/defconfig.log"
           echo "==== $(nproc) threads compile ===="
           make package/$PKG_NAME/download -j"$(nproc)" || true
-          make package/$PKG_NAME/compile -j"$(nproc)"
+          make package/$PKG_NAME/compile -j"$(nproc)" 2>&1 | tee "$GITHUB_WORKSPACE/build.log"
           echo "status=success" >> "$GITHUB_OUTPUT"
+
+      - name: Diagnose build failure
+        if: failure()
+        shell: bash
+        run: |
+          set +e
+          WS="$GITHUB_WORKSPACE"
+          [ -d "$SDK_ROOT" ] && cd "$SDK_ROOT"
+          echo "=================== kconfig 循环依赖上下文 ==================="
+          KC="tmp/.config-package.in"
+          if [ -f "$KC" ]; then
+            ln=$(grep -n 'recursive dependency' "$KC" | head -n1 | cut -d: -f1)
+            if [ -n "$ln" ]; then
+              start=$((ln-2)); [ "$start" -lt 1 ] && start=1
+              sed -n "${start},$((ln+14))p" "$KC"
+            else
+              echo "(defconfig 阶段未发现 recursive dependency)"
+            fi
+          else
+            echo "(未找到 $KC)"
+          fi
+          echo ""
+          echo "=================== 相关 CONFIG 取值 ==================="
+          grep -E 'SERVERCTL|LUCI_BASE|LUCI_APP|ATTENDEDSYSUPGRADE|PACKAGE_RPCD|RPCD_MOD|WAKEONLAN|SSHPASS|OPENSSH' .config 2>/dev/null || true
+          echo ""
+          echo "=================== defconfig.log 关键行 ==================="
+          grep -nE 'recursive dependency|error:|Error|not satisfied' "$WS/defconfig.log" 2>/dev/null | tail -n 40 || true
+          echo ""
+          echo "=================== build.log 错误行 ==================="
+          grep -nE 'Error [0-9]+|error:|undefined reference|No such file|command not found|not satisfied|Please (run|install)|cannot find' "$WS/build.log" 2>/dev/null | tail -n 60 || true
+          echo ""
+          echo "=================== build.log 末尾 120 行 ==================="
+          tail -n 120 "$WS/build.log" 2>/dev/null || echo "(无 build.log，defconfig 或更早步骤即失败)"
+          echo ""
+          echo "=================== 已产出的 ipk(若有) ==================="
+          find bin -name '*.ipk' 2>/dev/null | head -n 30 || true
+
+      - name: Upload failure logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs-${{ github.run_number }}
+          path: |
+            defconfig.log
+            build.log
+          if-no-files-found: ignore
 
       - name: Collect .ipk
         id: collect
