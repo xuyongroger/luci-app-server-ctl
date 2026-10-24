@@ -112,25 +112,42 @@ jobs:
           ./scripts/feeds update packages luci
 
       - name: Inject plugin & install feeds
+        shell: bash
         run: |
+          set -e
           cd "$SDK_ROOT"
           if [ ! -d feeds/luci/applications ]; then
             echo "::error::未找到 feeds/luci/applications，feeds update 可能失败"
             exit 1
           fi
-          # 放到 applications/ 层，使 Makefile 里的 `include ../../luci.mk` 能正确解析
-          cp -fR "$GITHUB_WORKSPACE/$PKG_NAME" feeds/luci/applications/
-          # 保持脚本可执行权限
-          chmod +x feeds/luci/applications/$PKG_NAME/root/etc/init.d/serverctl 2>/dev/null || true
-          chmod +x feeds/luci/applications/$PKG_NAME/root/usr/bin/serverctl-scheduler 2>/dev/null || true
           # packages feed 全量装（编译 luci-base 需要其中的依赖）
           ./scripts/feeds install -a -f -p packages
-          # luci feed 只装 luci-base 与本项目；切勿 install -a！
-          # 否则会把 luci-app-attendedsysupgrade 一并装进来，其
-          # select attendedsysupgrade-common -> select rpcd 会与本包依赖形成
-          # kconfig 循环依赖(recursive dependency detected)导致 defconfig/编译失败。
+          # luci feed 只装 luci-base（提供 luci.mk 及构建依赖）；切勿 install -a！
+          # 否则会装进 luci-app-attendedsysupgrade，其 select attendedsysupgrade-common
+          # -> select rpcd 会与本包依赖形成 kconfig 循环依赖导致编译失败。
           ./scripts/feeds install -f luci-base
-          ./scripts/feeds install -f "$PKG_NAME"
+          # 把本插件放进 luci feed 的 applications/ 层，使 Makefile 里的
+          # `include ../../luci.mk` 能解析到 feeds/luci/luci.mk
+          rm -rf "feeds/luci/applications/$PKG_NAME"
+          cp -fR "$GITHUB_WORKSPACE/$PKG_NAME" feeds/luci/applications/
+          chmod +x "feeds/luci/applications/$PKG_NAME/root/etc/init.d/serverctl" 2>/dev/null || true
+          chmod +x "feeds/luci/applications/$PKG_NAME/root/usr/bin/serverctl-scheduler" 2>/dev/null || true
+          # scripts/feeds 的包索引基于 feeds update 时的扫描，识别不到事后手动拷入的目录，
+          # 因此这里手动软链接到 package/feeds/luci/（与 scripts/feeds 生成的软链接完全等价，
+          # buildroot 扫描同样能识别，且 Makefile 的相对 include 仍解析正确）。
+          ./scripts/feeds install -f "$PKG_NAME" || true
+          if [ ! -e "package/feeds/luci/$PKG_NAME/Makefile" ]; then
+            echo "scripts/feeds 未能链接 $PKG_NAME，改为手动软链接"
+            mkdir -p package/feeds/luci
+            ln -snf "../../../feeds/luci/applications/$PKG_NAME" "package/feeds/luci/$PKG_NAME"
+          fi
+          # 硬校验：确保本包已接入 buildroot
+          if [ ! -e "package/feeds/luci/$PKG_NAME/Makefile" ]; then
+            echo "::error::未能将 $PKG_NAME 接入 buildroot（package/feeds/luci/$PKG_NAME 缺失）"
+            ls -la feeds/luci/applications/ 2>/dev/null | head || true
+            exit 1
+          fi
+          echo "OK: $PKG_NAME -> $(readlink -f "package/feeds/luci/$PKG_NAME")"
 
       - name: SSH connection to Actions
         uses: mxschmitt/action-tmate@v3
@@ -145,9 +162,21 @@ jobs:
         run: |
           set -o pipefail
           cd "$SDK_ROOT"
-          # 播种 .config：启用本包，defconfig 会据此自动带出所需依赖
-          printf 'CONFIG_PACKAGE_%s=m\n' "$PKG_NAME" >> .config
+          # 播种 .config：启用本包及其依赖，defconfig 会据此解析依赖闭包
+          {
+            printf 'CONFIG_PACKAGE_luci-base=m\n'
+            printf 'CONFIG_PACKAGE_wakeonlan=m\n'
+            printf 'CONFIG_PACKAGE_sshpass=m\n'
+            printf 'CONFIG_PACKAGE_openssh-client=m\n'
+            printf 'CONFIG_PACKAGE_%s=m\n' "$PKG_NAME"
+          } >> .config
           make defconfig 2>&1 | tee "$GITHUB_WORKSPACE/defconfig.log"
+          # 硬校验：defconfig 后本包必须被启用，否则尽早失败（避免长时间空跑）
+          if ! grep -q "^CONFIG_PACKAGE_${PKG_NAME}=m" .config; then
+            echo "::error::defconfig 后 ${PKG_NAME} 未被启用（依赖不满足或被剔除）"
+            grep -i 'serverctl' .config || echo '(本包相关 CONFIG 全无)'
+            exit 1
+          fi
           echo "==== $(nproc) threads compile ===="
           make package/$PKG_NAME/download -j"$(nproc)" || true
           make package/$PKG_NAME/compile -j"$(nproc)" 2>&1 | tee "$GITHUB_WORKSPACE/build.log"
@@ -175,7 +204,7 @@ jobs:
           fi
           echo ""
           echo "=================== 相关 CONFIG 取值 ==================="
-          grep -E 'SERVERCTL|LUCI_BASE|LUCI_APP|ATTENDEDSYSUPGRADE|PACKAGE_RPCD|RPCD_MOD|WAKEONLAN|SSHPASS|OPENSSH' .config 2>/dev/null || true
+          grep -iE 'serverctl|luci-base|attendedsysupgrade|rpcd|wakeonlan|sshpass|openssh' .config 2>/dev/null || true
           echo ""
           echo "=================== defconfig.log 关键行 ==================="
           grep -nE 'recursive dependency|error:|Error|not satisfied' "$WS/defconfig.log" 2>/dev/null | tail -n 40 || true
