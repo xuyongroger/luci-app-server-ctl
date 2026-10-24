@@ -182,7 +182,7 @@ jobs:
           # 确保其头文件先入 staging。
           {
             printf 'CONFIG_PACKAGE_luci-base=m\n'
-            printf 'CONFIG_PACKAGE_wakeonlan=m\n'
+            printf 'CONFIG_PACKAGE_etherwake=m\n'
             printf 'CONFIG_PACKAGE_sshpass=m\n'
             printf 'CONFIG_PACKAGE_openssh-client=m\n'
             printf 'CONFIG_PACKAGE_libiwinfo=m\n'
@@ -250,7 +250,7 @@ jobs:
           fi
           echo ""
           echo "=================== 相关 CONFIG 取值 ==================="
-          grep -iE 'serverctl|luci-base|attendedsysupgrade|rpcd|wakeonlan|sshpass|openssh' .config 2>/dev/null || true
+          grep -iE 'serverctl|luci-base|attendedsysupgrade|rpcd|etherwake|sshpass|openssh' .config 2>/dev/null || true
           echo ""
           echo "=================== defconfig.log 关键行 ==================="
           grep -nE 'recursive dependency|error:|Error|not satisfied' "$WS/defconfig.log" 2>/dev/null | tail -n 40 || true
@@ -319,5 +319,5 @@ jobs:
           name: luci-app-server-ctl (${{ steps.ver.outputs.version }})
           body: |
             由 GitHub Actions 自动编译，基于 ImmortalWrt ${{ steps.ver.outputs.version }} SDK。
-            安装：`opkg install luci-app-server-ctl_*.ipk`（会自动拉取依赖 luci-base / wakeonlan / sshpass / openssh-client）。
+            安装：`opkg install luci-app-server-ctl_*.ipk`（会自动拉取依赖 luci-base / etherwake / sshpass / openssh-client）。
           files: ${{ env.IPK_DIR }}/*.ipk

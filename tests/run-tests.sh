@@ -1,6 +1,6 @@
 #!/bin/sh
 # 端到端测试：调度器逻辑 + rpcd 模块 + 静态检查
-# 依赖: ucode(自制运行时), uci CLI, fake wakeonlan/sshpass/ping
+# 依赖: ucode(自制运行时), uci CLI, fake etherwake/sshpass/ping
 
 ROOT=/workspace/luci-plugin/luci-app-server-ctl/root
 PKG=/workspace/luci-plugin/luci-app-server-ctl
@@ -25,9 +25,9 @@ export SERVERCTL_DELTADIR=$T/delta
 CONF=$T/etc/config/serverctl
 
 # ---------- fake 工具 ----------
-cat > $T/bin/wakeonlan <<EOF
+cat > $T/bin/etherwake <<EOF
 #!/bin/sh
-echo "wakeonlan \$*" >> $LOG
+echo "etherwake \$*" >> $LOG
 EOF
 cat > $T/bin/sshpass <<EOF
 #!/bin/sh
@@ -173,7 +173,7 @@ echo "$OUT" | grep -q "t_weekly_wrong"                   && bad "weekly 星期�
 echo "$OUT" | grep -q "t_once_future"                    && bad "once 非当日不执行" || ok "once 非当日不执行"
 [ $(echo "$OUT" | grep -c .) -eq 5 ] && ok "恰好执行 5 个匹配任务(含 2 个预期失败)" || bad "恰好执行 5 个匹配任务: [$(echo "$OUT" | grep -c .)]"
 
-grep -q "^wakeonlan AA:BB:CC:DD:EE:01$" $LOG           && ok "wakeonlan 以 MAC 调用" || bad "wakeonlan 调用参数: $(cat $LOG)"
+grep -q "^etherwake -i br-lan AA:BB:CC:DD:EE:01$" $LOG && ok "etherwake 以 LAN 接口+MAC 调用" || bad "etherwake 调用参数: $(cat $LOG)"
 grep -q "systemctl poweroff" $LOG                       && ok "poweroff 经 ssh 执行" || bad "poweroff 经 ssh 执行"
 grep -Fq "sshpass -p pw2 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 dbuser@192.0.2.11 systemctl poweroff" $LOG \
 	&& ok "ssh 命令行完整(用户/选项/命令正确)" || bad "ssh 命令行完整: $(grep poweroff $LOG)"
