@@ -149,6 +149,25 @@ jobs:
           fi
           echo "OK: $PKG_NAME -> $(readlink -f "package/feeds/luci/$PKG_NAME")"
 
+      - name: Probe SDK staging
+        shell: bash
+        run: |
+          set +e
+          cd "$SDK_ROOT"
+          echo "### staging target 目录:"; ls -d staging_dir/target-* 2>/dev/null
+          echo "### netlink/msg.h 是否存在:"; find staging_dir -path '*netlink*' -name 'msg.h' 2>/dev/null
+          echo "### libnl-tiny 头文件:"; find staging_dir -path '*libnl-tiny*' -name '*.h' 2>/dev/null | head -n 20
+          echo "### lua.h 位置:"; find staging_dir -name 'lua.h' 2>/dev/null | head -n 20
+          echo "### base 源码是否在 package 树:"
+          for p in libnl-tiny lua lua5.4 rpcd libiwinfo ucode; do
+            printf '%-12s' "$p"; ls -d package/libs/$p package/feeds/packages/$p package/base-files 2>/dev/null | head -n1; echo
+          done
+          echo "### rpcd-mod-luci/Makefile 关键行:"; grep -nE 'DEPENDS|libnl|lua|CMAKE|CFLAGS' feeds/luci/libs/rpcd-mod-luci/Makefile 2>/dev/null
+          echo "### lucihttp/Makefile 关键行:"; grep -nE 'DEPENDS|lua|LUA|CMAKE' feeds/luci/contrib/package/lucihttp/Makefile 2>/dev/null
+          echo "### 已有预编译 ipk(bin):"; find bin -name 'rpcd-mod-luci*' -o -name '*lucihttp*' -o -name 'libiwinfo*' 2>/dev/null | head -n 20
+          echo "### SDK 是否附带 base 源码 package/libs:"; ls package/libs 2>/dev/null | head -n 40
+          echo "### feeds.conf:"; cat feeds.conf 2>/dev/null
+
       - name: SSH connection to Actions
         uses: mxschmitt/action-tmate@v3
         continue-on-error: true
