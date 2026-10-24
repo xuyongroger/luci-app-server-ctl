@@ -194,9 +194,13 @@ jobs:
           echo "==== $(nproc) threads compile ===="
           # 预先把缺 dev 头的基础库从源码构建并装入 staging（SDK 以预编译形式提供，
           # 不会自动补齐 libnl-tiny/netlink/msg.h、lua/lua.h 等头），避免 rpcd-mod-luci、
-          # lucihttp 编译时 "No such file or directory"。
-          make package/libnl-tiny/compile package/lua/compile package/ucode/compile package/libiwinfo/compile \
-            -j"$(nproc)" 2>&1 | tee "$GITHUB_WORKSPACE/stage-deps.log" || true
+          # lucihttp 编译时 "No such file or directory"。逐个 -j1 V=s：单个失败不阻断其余，
+          # 且能看到真实错误。
+          for p in libnl-tiny lua ucode libiwinfo; do
+            echo "########## pre-stage: $p ##########"
+            make package/$p/compile -j1 V=s 2>&1 | tee -a "$GITHUB_WORKSPACE/stage-deps.log" \
+              || echo "########## pre-stage $p FAILED ##########"
+          done
           make package/$PKG_NAME/download -j"$(nproc)" || true
           make package/$PKG_NAME/compile -j"$(nproc)" 2>&1 | tee "$GITHUB_WORKSPACE/build.log"
           echo "status=success" >> "$GITHUB_OUTPUT"
@@ -239,7 +243,7 @@ jobs:
           echo "--- logs 目录结构(前 60 项) ---"
           find logs -type f 2>/dev/null | head -n 60 || true
           echo "--- 失败依赖包日志 ---"
-          for f in $(find logs -type f \( -path '*rpcd-mod-luci*' -o -path '*lucihttp*' -o -path '*luci-base*' \) 2>/dev/null); do
+          for f in $(find logs -type f \( -path '*rpcd-mod-luci*' -o -path '*lucihttp*' -o -path '*luci-base*' -o -path '*libnl-tiny*' -o -path '*lua*' -o -path '*ucode*' -o -path '*libiwinfo*' \) 2>/dev/null); do
             echo "===== $f (tail 120) ====="
             tail -n 120 "$f"
           done
