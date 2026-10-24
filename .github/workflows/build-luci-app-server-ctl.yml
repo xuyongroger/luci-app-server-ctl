@@ -90,6 +90,15 @@ jobs:
           sudo mkdir -p /workdir
           sudo chown "$USER":"$GROUPS" /workdir
 
+      - name: Resolve build version
+        id: buildid
+        run: |
+          # 构建号 = 编译时间 + 本次 checkout 的 commit 短哈希，注入 PKG_VERSION，
+          # 使产出的 ipk 文件名可区分新旧（luci-app-server-ctl_<构建号>_all.ipk）。
+          BUILD_ID="$(date +%Y.%m.%d%H%M)-$(git rev-parse --short=7 HEAD)"
+          echo "BUILD_ID=$BUILD_ID" >> "$GITHUB_ENV"
+          echo "build_id=$BUILD_ID" >> "$GITHUB_OUTPUT"
+
       - name: Download & unpack ImmortalWrt SDK
         working-directory: /workdir
         run: |
@@ -189,7 +198,7 @@ jobs:
             printf 'CONFIG_PACKAGE_%s=m\n' "$PKG_NAME"
             printf 'CONFIG_PACKAGE_%s=m\n' "$I18N_PKG"
           } >> .config
-          make defconfig 2>&1 | tee "$GITHUB_WORKSPACE/defconfig.log"
+          make defconfig CTL_BUILDID="$BUILD_ID" 2>&1 | tee "$GITHUB_WORKSPACE/defconfig.log"
           # 硬校验：defconfig 后本包必须被启用，否则尽早失败（避免长时间空跑）
           if ! grep -q "^CONFIG_PACKAGE_${PKG_NAME}=m" .config; then
             echo "::error::defconfig 后 ${PKG_NAME} 未被启用（依赖不满足或被剔除）"
@@ -206,13 +215,13 @@ jobs:
           fi
           echo "==== $(nproc) threads compile ===="
           make package/$PKG_NAME/download -j"$(nproc)" || true
-          make package/$PKG_NAME/compile -j"$(nproc)" 2>&1 | tee "$GITHUB_WORKSPACE/build.log"
+          make package/$PKG_NAME/compile CTL_BUILDID="$BUILD_ID" -j"$(nproc)" 2>&1 | tee "$GITHUB_WORKSPACE/build.log"
           if [ "$BUILD_I18N" = "1" ]; then
             echo "==== compile app+i18n in one build set (${I18N_PKG}) ===="
             # 与主包同一次 make 编译，共享 build_dir；结尾 buildroot 会对 HIDDEN 的 i18n
             # 目标再走一遍 package/<i18n>/compile 记账并 'No rule to make target' 报错，
             # 但 ipk 实际已产出，故此处 || true 吞掉收尾错误，改以“ipk 是否真实存在”判定成败。
-            make package/$PKG_NAME/compile package/$I18N_PKG/compile -j"$(nproc)" 2>&1 | tee -a "$GITHUB_WORKSPACE/build.log" || true
+            make package/$PKG_NAME/compile package/$I18N_PKG/compile CTL_BUILDID="$BUILD_ID" -j"$(nproc)" 2>&1 | tee -a "$GITHUB_WORKSPACE/build.log" || true
             mkdir -p "$GITHUB_WORKSPACE/ipk"
             aipk=$(find "$SDK_ROOT/bin" -name "${PKG_NAME}_*.ipk"  | head -n1)
             iipk=$(find "$SDK_ROOT/bin" -name "${I18N_PKG}_*.ipk" | head -n1)
@@ -319,5 +328,7 @@ jobs:
           name: luci-app-server-ctl (${{ steps.ver.outputs.version }})
           body: |
             由 GitHub Actions 自动编译，基于 ImmortalWrt ${{ steps.ver.outputs.version }} SDK。
-            安装：`opkg install luci-app-server-ctl_*.ipk`（会自动拉取依赖 luci-base / etherwake / sshpass / openssh-client）。
+            构建版本号：`${{ steps.buildid.outputs.build_id }}`（已写入 ipk 文件名）。
+            安装：`opkg install luci-app-server-ctl_*.ipk luci-i18n-server-ctl-zh-cn_*.ipk`（会自动拉取依赖 luci-base / etherwake / sshpass / openssh-client）。
+            升级覆盖：如遇 opkg 提示已安装同版本而跳过，可用 `opkg install <ipk> --force-reinstall` 强制覆盖。
           files: ${{ env.IPK_DIR }}/*.ipk
