@@ -208,8 +208,8 @@ jobs:
           make package/$PKG_NAME/download -j"$(nproc)" || true
           make package/$PKG_NAME/compile -j"$(nproc)" 2>&1 | tee "$GITHUB_WORKSPACE/build.log"
           if [ "$BUILD_I18N" = "1" ]; then
-            echo "==== compile i18n (${I18N_PKG}) ===="
-            if ! make package/$I18N_PKG/compile -j1 V=s 2>&1 | tee -a "$GITHUB_WORKSPACE/build.log"; then
+            echo "==== compile app+i18n together (${I18N_PKG}) ===="
+            if ! make package/$PKG_NAME/compile package/$I18N_PKG/compile -j1 V=s 2>&1 | tee -a "$GITHUB_WORKSPACE/build.log"; then
               echo "==== i18n compile FAILED; dump its buildroot logs ===="
               find logs -type f \( -path '*server-ctl*' -o -path '*luci-i18n-server-ctl*' \) 2>/dev/null | while read -r f; do
                 echo "----- $f (tail 200) -----"; tail -n 200 "$f"
