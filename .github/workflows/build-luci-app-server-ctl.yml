@@ -108,9 +108,10 @@ jobs:
         run: |
           cd "$SDK_ROOT"
           [ -f feeds.conf.default ] && cp feeds.conf.default feeds.conf || true
-          ./scripts/feeds update -a
+          # 只需 packages 与 luci 两个 feed，避免无谓下载
+          ./scripts/feeds update packages luci
 
-      - name: Inject this plugin into luci feed
+      - name: Inject plugin & install feeds
         run: |
           cd "$SDK_ROOT"
           if [ ! -d feeds/luci/applications ]; then
@@ -122,7 +123,14 @@ jobs:
           # 保持脚本可执行权限
           chmod +x feeds/luci/applications/$PKG_NAME/root/etc/init.d/serverctl 2>/dev/null || true
           chmod +x feeds/luci/applications/$PKG_NAME/root/usr/bin/serverctl-scheduler 2>/dev/null || true
-          ./scripts/feeds install -a
+          # packages feed 全量装（编译 luci-base 需要其中的依赖）
+          ./scripts/feeds install -a -f -p packages
+          # luci feed 只装 luci-base 与本项目；切勿 install -a！
+          # 否则会把 luci-app-attendedsysupgrade 一并装进来，其
+          # select attendedsysupgrade-common -> select rpcd 会与本包依赖形成
+          # kconfig 循环依赖(recursive dependency detected)导致 defconfig/编译失败。
+          ./scripts/feeds install -f luci-base
+          ./scripts/feeds install -f "$PKG_NAME"
 
       - name: SSH connection to Actions
         uses: mxschmitt/action-tmate@v3
@@ -135,6 +143,8 @@ jobs:
         id: compile
         run: |
           cd "$SDK_ROOT"
+          # 播种 .config：启用本包，defconfig 会据此自动带出所需依赖
+          printf 'CONFIG_PACKAGE_%s=m\n' "$PKG_NAME" >> .config
           make defconfig
           echo "==== $(nproc) threads compile ===="
           make package/$PKG_NAME/download -j"$(nproc)" || true
