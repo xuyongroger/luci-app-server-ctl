@@ -95,24 +95,32 @@ ssh root@<路由器IP> "opkg update && opkg install /tmp/luci-app-server-ctl_*.i
 make package/luci-app-server-ctl/compile V=s
 ```
 
-产出的 ipk 位于 `bin/packages/<arch>/packages/`。
+产出的 ipk 位于 `bin/packages/<arch>/…`（一般在所属 feed 的子目录下，如 `bin/packages/x86_64/luci/`）。
+
+> 若用 **SDK** 做本地编译：本包会连带编译 `luci-base` 及其 C 依赖（`rpcd-mod-luci`、`lucihttp`），
+> 它们需要 `libnl-tiny` / `liblua` / `libiwinfo` 等 core 包的**源码**来补齐 staging 头。SDK 只预编译
+> 不附带这些源码，因此务必同时更新并安装 `base` feed（`feeds.conf` 中的 `src-git-full base`），
+> 否则会报缺 `netlink/msg.h`、`lua.h`。GitHub Actions 工作流已自动处理此点。
 
 ## 云端编译（GitHub Actions）
 
-本仓库使用 **ImmortalWrt SDK** 单独编译本插件，无需构建整个固件：
+本仓库使用 **ImmortalWrt SDK** 单独编译本插件，无需构建整个固件。工作流文件：
 
 `.github/workflows/build-luci-app-server-ctl.yml`
 
-使用步骤：
+**流水线主要步骤**：下载并解包 SDK → `feeds update base packages luci`（`base` 用于补齐 core 包源码，见上文提示）→ 将本插件放入 luci feed 的 `applications/` 层并软链接进 `package/feeds/luci/` → 播种 `.config` 并 `make defconfig`（硬校验本包已启用）→ `make package/luci-app-server-ctl/compile` → 收集 ipk 并上传为 Artifact。
 
-1. 打开仓库 **Actions** → **Build luci-app-server-ctl** → **Run workflow**；
-2. 可选参数：
-   - `iw_version`：SDK 对应的 ImmortalWrt 版本，默认 `24.10.6`（可填 `25.12.2` 等）；
-   - `upload_release`：`true` 时创建 Release 并附上 ipk；
-   - `ssh`：`true` 时开启 tmate 远程调试；
-3. 运行结束后在 **Artifacts** 下载 ipk。
+**触发方式**：打开仓库 **Actions** → **Build luci-app-server-ctl** → **Run workflow**，可选参数：
 
-> 首次运行会连带编译 `luci-base` 等构建依赖，耗时约十几分钟到半小时，属正常现象。产出的 ipk 为 `all` 架构，通用于各目标平台。
+| 参数 | 说明 | 默认 |
+| --- | --- | --- |
+| `iw_version` | SDK 对应的 ImmortalWrt 版本，如 `24.10.6` / `25.12.2` | `24.10.6` |
+| `upload_release` | 填 `true` 时创建 Release 并附上 ipk | `false` |
+| `ssh` | 填 `true` 时开启 tmate 远程调试 | `false` |
+
+**产物**：运行成功后在 **Artifacts** 中下载 `luci-app-server-ctl-ipk-…`（内含 `luci-app-server-ctl_0_all.ipk`，架构为 `all`，通用于各目标平台）。若 `upload_release=true`，同样文件会附带在 Release 上。
+
+**耗时与排错**：会连带从源码编译 `luci-base`、`rpcd`、`rpcd-mod-luci`、`lucihttp` 等依赖，整体约 20 分钟上下，属正常现象。若编译失败，工作流会自动执行 **Diagnose build failure** 步骤，打印 kconfig 循环依赖上下文、相关 `CONFIG` 取值以及 buildroot 分包日志（`logs/.../compile.txt`）中的关键错误，并在失败时上传完整日志 zip，便于快速定位。
 
 ## 本地预览与测试
 
