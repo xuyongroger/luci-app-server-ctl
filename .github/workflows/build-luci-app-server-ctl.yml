@@ -51,6 +51,8 @@ env:
   # SDK 的目标平台。SDK 是 x86_64 的，但 LuCI 应用 PKGARCH:=all，产出的 ipk 通用于各平台
   IW_TARGET: x86/64
   PKG_NAME: luci-app-server-ctl
+  # 简体中文翻译为独立 i18n 包(po/zh_Hans -> 包名后缀 zh-cn)
+  I18N_PKG: luci-i18n-server-ctl-zh-cn
   TZ: Asia/Shanghai
 
 permissions:
@@ -185,6 +187,7 @@ jobs:
             printf 'CONFIG_PACKAGE_openssh-client=m\n'
             printf 'CONFIG_PACKAGE_libiwinfo=m\n'
             printf 'CONFIG_PACKAGE_%s=m\n' "$PKG_NAME"
+            printf 'CONFIG_PACKAGE_%s=m\n' "$I18N_PKG"
           } >> .config
           make defconfig 2>&1 | tee "$GITHUB_WORKSPACE/defconfig.log"
           # 硬校验：defconfig 后本包必须被启用，否则尽早失败（避免长时间空跑）
@@ -193,9 +196,21 @@ jobs:
             grep -i 'serverctl' .config || echo '(本包相关 CONFIG 全无)'
             exit 1
           fi
+          # 简体中文 i18n：defconfig 后仍在 .config 中则一并编译，否则告警但保持绿色
+          if grep -q "^CONFIG_PACKAGE_${I18N_PKG}=m" .config; then
+            BUILD_I18N=1
+            echo "will also build i18n package: ${I18N_PKG}"
+          else
+            BUILD_I18N=0
+            echo "::warning::defconfig 后 ${I18N_PKG} 未被启用，本次仅编译主程序包"
+          fi
           echo "==== $(nproc) threads compile ===="
           make package/$PKG_NAME/download -j"$(nproc)" || true
           make package/$PKG_NAME/compile -j"$(nproc)" 2>&1 | tee "$GITHUB_WORKSPACE/build.log"
+          if [ "$BUILD_I18N" = "1" ]; then
+            echo "==== compile i18n (${I18N_PKG}) ===="
+            make package/$I18N_PKG/compile -j"$(nproc)" 2>&1 | tee -a "$GITHUB_WORKSPACE/build.log"
+          fi
           echo "status=success" >> "$GITHUB_OUTPUT"
 
       - name: Diagnose build failure
@@ -262,7 +277,7 @@ jobs:
         if: steps.compile.outputs.status == 'success' && !cancelled()
         run: |
           mkdir -p "$GITHUB_WORKSPACE/ipk"
-          found=$(find "$SDK_ROOT/bin" -name "${PKG_NAME}*.ipk")
+          found=$(find "$SDK_ROOT/bin" -name "${PKG_NAME}*.ipk" -o -name "${I18N_PKG}*.ipk")
           if [ -z "$found" ]; then
             echo "::error::编译结束但未找到 .ipk"
             find "$SDK_ROOT/bin" -name '*.ipk' | head -n 50 || true
