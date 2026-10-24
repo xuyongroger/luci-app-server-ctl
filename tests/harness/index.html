@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="zh-hans" dir="ltr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Server Control - LuCI harness</title>
+<link rel="stylesheet" media="screen" href="/luci-static/openwrt2020/cascade.css" />
+<script src="/luci-static/resources/cbi.js"></script>
+</head>
+<body class="lang_zh-hans" data-page="admin-serverctl-main">
+
+<p class="skiplink">
+<span id="skiplink1"><a href="#navigation">Skip to navigation</a></span>
+<span id="skiplink2"><a href="#content">Skip to content</a></span>
+</p>
+
+<div id="menubar">
+	<h2 class="navigation"><a id="navigation" name="navigation">Navigation</a></h2>
+	<span class="hostname"><a href="/">mockrouter</a></span>
+	<span class="distversion">ImmortalWrt 24.10.6 (harness)</span>
+	<span id="indicators"></span>
+</div>
+
+<div id="modemenu" style="display:none"></div>
+
+<div id="maincontainer">
+	<div id="mainmenu"></div>
+
+	<div id="maincontent">
+		<div id="tabmenu" style="display:none"></div>
+
+		<div id="view">
+			<div class="spinning">Loading view…</div>
+		</div>
+	</div>
+</div>
+
+<p class="luci">Powered by LuCI (playwright harness)</p>
+
+<script src="/luci-static/resources/luci.js"></script>
+<script>
+L = new LuCI({
+	media: '/luci-static/openwrt2020',
+	resource: '/luci-static/resources',
+	scriptname: '/cgi-bin/luci',
+	pathinfo: '/admin/serverctl/main',
+	documentroot: '/',
+	requestpath: ['admin', 'serverctl', 'main'],
+	dispatchpath: ['admin', 'serverctl', 'main'],
+	pollinterval: 5,
+	ubuspath: '/ubus/',
+	sessionid: 'mocksession0123456789abcdef',
+	token: 'mocktoken0123456789abcdef',
+	nodespec: { satisfied: true, readonly: false },
+	apply_rollback: 90,
+	apply_holdoff: 4,
+	apply_timeout: 5,
+	apply_display: 1.5
+});
+</script>
+<script>
+L.require('ui').then(function(ui) {
+	ui.instantiateView('serverctl/main');
+});
+</script>
+<script>L.require('menu-openwrt2020');</script>
+
+</body>
+</html>

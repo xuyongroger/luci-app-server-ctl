@@ -1,0 +1,19 @@
+# Node 测试工具链
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# 编辑器 / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 操作系统
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 临时与日志
+*.tmp
+*.log
