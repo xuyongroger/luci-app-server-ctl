@@ -121,8 +121,56 @@ const CTL_CSS = `
 	border-bottom: 2px solid currentColor;
 }
 
+/* Argon-like themes turn both .cbi-section and the tab panes (they carry
+ * data-tab-title) into shadowed cards; nested, their edges stack into a
+ * double border around each tab page. Flatten the sections inside the
+ * panes so only the pane keeps one card layer, separated by a hairline. */
+.ctl-tabs-pane .cbi-section {
+	background-color: transparent;
+	border: 0;
+	border-radius: 0;
+	box-shadow: none;
+}
+
+.ctl-tabs-pane .cbi-section + .cbi-section {
+	border-top: 1px solid rgba(128, 128, 128, 0.25);
+}
+
+/* The tab label already reads "Server Maintenance", so the section title
+ * band inside that pane is redundant; drop it and keep the description. */
+.ctl-tabs-pane[data-tab="servers"] .cbi-section > h3 {
+	display: none;
+}
+
+/* Fuse the tab strip with the pane like argon's own tab pages do:
+ * argon pulls the node following ".cbi-map > .cbi-tabmenu" up under the
+ * tabs (-0.4375rem); square off the pane top corners and drop the gap so
+ * the active tab rests on a single continuous card. */
+.ctl-tabs-menu {
+	margin-bottom: 0;
+}
+
+.ctl-tabs-pane[data-tab-title] {
+	margin-top: 0;
+	padding-top: 0;
+	border-top-left-radius: 0;
+	border-top-right-radius: 0;
+}
+
+/* Flat tab look as in stock argon tab pages: only the active tab is a
+ * raised shape resting on the card, inactive tabs are plain labels on
+ * the page background. */
+.ctl-tabs-menu > li {
+	background-color: transparent;
+	border-radius: 0.25rem 0.25rem 0 0;
+}
+
+.ctl-tabs-menu > .cbi-tab {
+	background-color: var(--surface-color, rgba(128, 128, 128, 0.16));
+}
+
 .ctl-manual {
-	margin-bottom: 1.75em;
+	margin-bottom: 1.25em;
 }
 
 .ctl-manual .ctl-body {
@@ -136,7 +184,7 @@ const CTL_CSS = `
 	justify-content: center;
 	align-items: center;
 	gap: 0.75em;
-	margin: 0 0 1.5em 0;
+	margin: 1.5em 0;
 }
 
 .ctl-manual .ctl-info {
@@ -221,7 +269,11 @@ const ManualSection = form.NamedSection.extend({
 	render() {
 		const self = this;
 		const servers = getServers();
-		const legend = E('legend', {}, _('Manual Control'));
+
+		/* Use an h3 heading rather than a legend: argon-like themes
+		 * hide ".cbi-section > legend" outright, which would drop the
+		 * section title from the page. */
+		const heading = E('h3', {}, _('Manual Control'));
 
 		self.buttons = [];
 
@@ -230,7 +282,7 @@ const ManualSection = form.NamedSection.extend({
 				_('No servers configured yet. Please add servers on the "%s" tab first.')
 					.format(_('Server Maintenance')));
 
-			const root = E('div', { 'class': 'cbi-section' }, [ legend, empty ]);
+			const root = E('div', { 'class': 'cbi-section' }, [ heading, empty ]);
 			root.setAttribute('data-ctl-area', this.ctlArea);
 			return root;
 		}
@@ -304,7 +356,7 @@ const ManualSection = form.NamedSection.extend({
 		]);
 
 		const root = E('div', { 'class': 'cbi-section ctl-manual' },
-			[ legend, body, E('style', {}, CTL_CSS) ]);
+			[ heading, body, E('style', {}, CTL_CSS) ]);
 		root.setAttribute('data-ctl-area', this.ctlArea);
 		return root;
 	},
