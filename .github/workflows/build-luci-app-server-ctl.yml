@@ -162,12 +162,26 @@ jobs:
         run: |
           set -o pipefail
           cd "$SDK_ROOT"
-          # 播种 .config：启用本包及其依赖，defconfig 会据此解析依赖闭包
+          # 播种 .config：启用本包及其依赖，defconfig 会据此解析依赖闭包。
+          # 额外强制开启若干基础库(=m)：SDK 里 rpcd/libiwinfo 等以“预编译”形式存在
+          # (=y)，buildroot 不会从源码重建它们，也就不会把它们的 dev 头装进 staging；
+          # 而我们从 luci feed 重新编译 rpcd-mod-luci/lucihttp/luci-base 时，需要
+          # libnl-tiny 的 netlink/msg.h、lua 的 lua.h、ucode/libiwinfo 等头文件，
+          # 缺失会报 "No such file or directory"。显式开启可逼 buildroot 从源码构建
+          # 这些库以补齐 staging 头文件。
           {
             printf 'CONFIG_PACKAGE_luci-base=m\n'
             printf 'CONFIG_PACKAGE_wakeonlan=m\n'
             printf 'CONFIG_PACKAGE_sshpass=m\n'
             printf 'CONFIG_PACKAGE_openssh-client=m\n'
+            printf 'CONFIG_PACKAGE_libnl-tiny=m\n'
+            printf 'CONFIG_PACKAGE_lua=m\n'
+            printf 'CONFIG_PACKAGE_ucode=m\n'
+            printf 'CONFIG_PACKAGE_libiwinfo=m\n'
+            printf 'CONFIG_PACKAGE_libjson-c=m\n'
+            printf 'CONFIG_PACKAGE_libubus=m\n'
+            printf 'CONFIG_PACKAGE_libubox=m\n'
+            printf 'CONFIG_PACKAGE_libuci=m\n'
             printf 'CONFIG_PACKAGE_%s=m\n' "$PKG_NAME"
           } >> .config
           make defconfig 2>&1 | tee "$GITHUB_WORKSPACE/defconfig.log"
@@ -178,6 +192,11 @@ jobs:
             exit 1
           fi
           echo "==== $(nproc) threads compile ===="
+          # 预先把缺 dev 头的基础库从源码构建并装入 staging（SDK 以预编译形式提供，
+          # 不会自动补齐 libnl-tiny/netlink/msg.h、lua/lua.h 等头），避免 rpcd-mod-luci、
+          # lucihttp 编译时 "No such file or directory"。
+          make package/libnl-tiny/compile package/lua/compile package/ucode/compile package/libiwinfo/compile \
+            -j"$(nproc)" 2>&1 | tee "$GITHUB_WORKSPACE/stage-deps.log" || true
           make package/$PKG_NAME/download -j"$(nproc)" || true
           make package/$PKG_NAME/compile -j"$(nproc)" 2>&1 | tee "$GITHUB_WORKSPACE/build.log"
           echo "status=success" >> "$GITHUB_OUTPUT"
