@@ -108,8 +108,10 @@ jobs:
         run: |
           cd "$SDK_ROOT"
           [ -f feeds.conf.default ] && cp feeds.conf.default feeds.conf || true
-          # 只需 packages 与 luci 两个 feed，避免无谓下载
-          ./scripts/feeds update packages luci
+          # 需要 base(提供 rpcd/libnl-tiny/liblua/libiwinfo/ucode 等 core 源码)、
+          # packages、luci 三个 feed。缺 base 时 SDK 不附带这些 core 源码，
+          # 会导致 rpcd-mod-luci/lucihttp 编译时 netlink/msg.h、lua.h 等头文件缺失。
+          ./scripts/feeds update base packages luci
 
       - name: Inject plugin & install feeds
         shell: bash
@@ -120,6 +122,10 @@ jobs:
             echo "::error::未找到 feeds/luci/applications，feeds update 可能失败"
             exit 1
           fi
+          # base feed 提供 rpcd/libnl-tiny/liblua/libiwinfo/ucode 等 core 源码：
+          # SDK 只预编译不附源码，重编 luci-base 的 C 依赖时需要这些源码来补齐
+          # staging 头(netlink/msg.h、lua.h 等)，故必须安装 base feed。
+          ./scripts/feeds install -a -f -p base
           # packages feed 全量装（编译 luci-base 需要其中的依赖）
           ./scripts/feeds install -a -f -p packages
           # luci feed 只装 luci-base（提供 luci.mk 及构建依赖）；切勿 install -a！
@@ -182,25 +188,16 @@ jobs:
           set -o pipefail
           cd "$SDK_ROOT"
           # 播种 .config：启用本包及其依赖，defconfig 会据此解析依赖闭包。
-          # 额外强制开启若干基础库(=m)：SDK 里 rpcd/libiwinfo 等以“预编译”形式存在
-          # (=y)，buildroot 不会从源码重建它们，也就不会把它们的 dev 头装进 staging；
-          # 而我们从 luci feed 重新编译 rpcd-mod-luci/lucihttp/luci-base 时，需要
-          # libnl-tiny 的 netlink/msg.h、lua 的 lua.h、ucode/libiwinfo 等头文件，
-          # 缺失会报 "No such file or directory"。显式开启可逼 buildroot 从源码构建
-          # 这些库以补齐 staging 头文件。
+          # base feed 已安装，rpcd/libnl-tiny/liblua/ucode 等 core 依赖会由 rpcd-mod-luci、
+          # lucihttp、luci-base 的 DEPENDS 自动纳入闭包并从源码构建、补齐 staging 头。
+          # libiwinfo 仅作为 rpcd-mod-luci 的 PKG_BUILD_DEPENDS(非 DEPENDS)，需显式开启以
+          # 确保其头文件先入 staging。
           {
             printf 'CONFIG_PACKAGE_luci-base=m\n'
             printf 'CONFIG_PACKAGE_wakeonlan=m\n'
             printf 'CONFIG_PACKAGE_sshpass=m\n'
             printf 'CONFIG_PACKAGE_openssh-client=m\n'
-            printf 'CONFIG_PACKAGE_libnl-tiny=m\n'
-            printf 'CONFIG_PACKAGE_lua=m\n'
-            printf 'CONFIG_PACKAGE_ucode=m\n'
             printf 'CONFIG_PACKAGE_libiwinfo=m\n'
-            printf 'CONFIG_PACKAGE_libjson-c=m\n'
-            printf 'CONFIG_PACKAGE_libubus=m\n'
-            printf 'CONFIG_PACKAGE_libubox=m\n'
-            printf 'CONFIG_PACKAGE_libuci=m\n'
             printf 'CONFIG_PACKAGE_%s=m\n' "$PKG_NAME"
           } >> .config
           make defconfig 2>&1 | tee "$GITHUB_WORKSPACE/defconfig.log"
@@ -211,15 +208,6 @@ jobs:
             exit 1
           fi
           echo "==== $(nproc) threads compile ===="
-          # 预先把缺 dev 头的基础库从源码构建并装入 staging（SDK 以预编译形式提供，
-          # 不会自动补齐 libnl-tiny/netlink/msg.h、lua/lua.h 等头），避免 rpcd-mod-luci、
-          # lucihttp 编译时 "No such file or directory"。逐个 -j1 V=s：单个失败不阻断其余，
-          # 且能看到真实错误。
-          for p in libnl-tiny lua ucode libiwinfo; do
-            echo "########## pre-stage: $p ##########"
-            make package/$p/compile -j1 V=s 2>&1 | tee -a "$GITHUB_WORKSPACE/stage-deps.log" \
-              || echo "########## pre-stage $p FAILED ##########"
-          done
           make package/$PKG_NAME/download -j"$(nproc)" || true
           make package/$PKG_NAME/compile -j"$(nproc)" 2>&1 | tee "$GITHUB_WORKSPACE/build.log"
           echo "status=success" >> "$GITHUB_OUTPUT"
