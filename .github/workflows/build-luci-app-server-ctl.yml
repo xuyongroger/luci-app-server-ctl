@@ -1,0 +1,177 @@
+#
+# luci-app-server-ctl —— 用 GitHub Actions 云端编译单个 OpenWrt/ImmortalWrt LuCI 插件
+#
+# 思路说明：
+#   参考仓库 My-ImmortalWrt 走的是“全固件编译”（克隆整棵 ImmortalWrt 源码树再 make -j，
+#   产出整个固件镜像）。但本仓库只是一个单独的 LuCI 应用包，不需要编整台路由器的固件。
+#   编译单个插件的官方推荐工具是 OpenWrt/ImmortalWrt 的 SDK（专为此设计，几分钟即可产出 .ipk）。
+#
+#   注意：本包 Makefile 使用 `include ../../luci.mk`，这要求包目录位于 luci feed 的
+#   applications/ 这一层，相对路径才能解析到 luci.mk。因此本工作流先更新 feeds，再把
+#   luci-app-server-ctl 复制进 feeds/luci/applications/ 下，然后 feeds install 让 buildroot 识别它。
+#
+# 触发方式：
+#   - Actions 页面手动 Run workflow（workflow_dispatch），可填写参数
+#   - repository_dispatch（外部 API 触发）
+#
+# 产出：
+#   - Actions Artifacts：luci-app-server-ctl_*.ipk
+#   - 可选：勾选 upload_release 后会创建一个 Release 并附上 .ipk
+#
+
+name: Build luci-app-server-ctl
+
+on:
+  repository_dispatch:
+  workflow_dispatch:
+    inputs:
+      iw_version:
+        description: 'ImmortalWrt 版本（用于选择 SDK，例如 24.10.6 / 25.12.2）'
+        required: false
+        default: '24.10.6'
+      upload_release:
+        description: '是否创建 Release 并上传 .ipk（true/false）'
+        required: false
+        default: 'false'
+      ssh:
+        description: '开启 SSH 远程调试 Actions（true/false）'
+        required: false
+        default: 'false'
+
+env:
+  # ImmortalWrt 官方下载镜像的 releases 根目录
+  IW_MIRROR: https://downloads.immortalwrt.org/releases
+  # 用作 fallback，若手动运行未填 iw_version 时使用；手动运行以输入框为准
+  IW_VERSION_DEFAULT: 24.10.6
+  # SDK 的目标平台。SDK 是 x86_64 的，但 LuCI 应用 PKGARCH:=all，产出的 ipk 通用于各平台
+  IW_TARGET: x86/64
+  PKG_NAME: luci-app-server-ctl
+  TZ: Asia/Shanghai
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: ver
+        run: |
+          echo "version=${{ github.event.inputs.iw_version || env.IW_VERSION_DEFAULT }}" >> "$GITHUB_OUTPUT"
+
+      - name: Install build dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo -E apt-get -qq update
+          sudo -E apt-get -qq install -y --no-install-recommends \
+            build-essential clang flex bison g++ gawk gcc-multilib g++-multilib \
+            gettext git libncurses5-dev libncursesw5-dev libssl-dev \
+            python3 python3-setuptools python3-pip python3-distutils rsync swig \
+            unzip zlib1g-dev file wget curl ca-certificates zstd time subversion \
+            libelf-dev cmake meson ninja-build pkg-config libjson-c-dev
+          sudo -E apt-get -qq autoremove --purge
+          sudo -E apt-get -qq clean
+          sudo timedatectl set-timezone "$TZ"
+          # 在更大盘符上工作，避免默认盘空间不足
+          sudo mkdir -p /workdir
+          sudo chown "$USER":"$GROUPS" /workdir
+
+      - name: Download & unpack ImmortalWrt SDK
+        working-directory: /workdir
+        run: |
+          VERSION="${{ steps.ver.outputs.version }}"
+          BASE="${IW_MIRROR}/${VERSION}/targets/${IW_TARGET}"
+          echo "Detecting SDK at: $BASE"
+          # 从目录列表里抓取 SDK 文件名（不同版本 gcc / 压缩格式会变化）
+          SDK_FILE=$(curl -fsSL "$BASE/" | grep -oE 'immortalwrt-sdk-[^"<> ]+\.Linux-x86_64\.tar\.(xz|zst|gz)' | sort -u | head -n1)
+          if [ -z "$SDK_FILE" ]; then
+            echo "::error::未能自动找到 SDK 文件，请检查 IW_VERSION 是否正确"
+            exit 1
+          fi
+          echo "Found SDK: $SDK_FILE"
+          curl -fsSL -o sdk.tar "$BASE/$SDK_FILE"
+          tar -xf sdk.tar
+          rm -f sdk.tar
+          SDK_ROOT=$(find "$PWD" -maxdepth 1 -type d -name 'immortalwrt-sdk-*' | head -n1)
+          echo "SDK_ROOT=$SDK_ROOT"
+          echo "SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+          df -hT "$PWD"
+
+      - name: Update feeds
+        run: |
+          cd "$SDK_ROOT"
+          [ -f feeds.conf.default ] && cp feeds.conf.default feeds.conf || true
+          ./scripts/feeds update -a
+
+      - name: Inject this plugin into luci feed
+        run: |
+          cd "$SDK_ROOT"
+          if [ ! -d feeds/luci/applications ]; then
+            echo "::error::未找到 feeds/luci/applications，feeds update 可能失败"
+            exit 1
+          fi
+          # 放到 applications/ 层，使 Makefile 里的 `include ../../luci.mk` 能正确解析
+          cp -fR "$GITHUB_WORKSPACE/$PKG_NAME" feeds/luci/applications/
+          # 保持脚本可执行权限
+          chmod +x feeds/luci/applications/$PKG_NAME/root/etc/init.d/serverctl 2>/dev/null || true
+          chmod +x feeds/luci/applications/$PKG_NAME/root/usr/bin/serverctl-scheduler 2>/dev/null || true
+          ./scripts/feeds install -a
+
+      - name: SSH connection to Actions
+        uses: mxschmitt/action-tmate@v3
+        continue-on-error: true
+        if: github.event.inputs.ssh == 'true'
+        with:
+          limit-access-to-actor: true
+
+      - name: Compile package
+        id: compile
+        run: |
+          cd "$SDK_ROOT"
+          make defconfig
+          echo "==== $(nproc) threads compile ===="
+          make package/$PKG_NAME/download -j"$(nproc)" || true
+          make package/$PKG_NAME/compile -j"$(nproc)"
+          echo "status=success" >> "$GITHUB_OUTPUT"
+
+      - name: Collect .ipk
+        id: collect
+        if: steps.compile.outputs.status == 'success' && !cancelled()
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/ipk"
+          found=$(find "$SDK_ROOT/bin" -name "${PKG_NAME}*.ipk")
+          if [ -z "$found" ]; then
+            echo "::error::编译结束但未找到 .ipk"
+            find "$SDK_ROOT/bin" -name '*.ipk' | head -n 50 || true
+            exit 1
+          fi
+          echo "$found" | xargs -I{} cp -v {} "$GITHUB_WORKSPACE/ipk/"
+          echo "IPK_DIR=$GITHUB_WORKSPACE/ipk" >> "$GITHUB_ENV"
+          echo "status=success" >> "$GITHUB_OUTPUT"
+          ls -lh "$GITHUB_WORKSPACE/ipk"
+
+      - name: Upload ipk as artifact
+        uses: actions/upload-artifact@v4
+        if: steps.collect.outputs.status == 'success' && !cancelled()
+        with:
+          name: luci-app-server-ctl-ipk-${{ steps.ver.outputs.version }}-${{ github.run_number }}
+          path: ${{ env.IPK_DIR }}
+          if-no-files-found: error
+
+      - name: Create release
+        if: github.event.inputs.upload_release == 'true' && steps.collect.outputs.status == 'success' && !cancelled()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.PKG_NAME }}-${{ steps.ver.outputs.version }}-${{ github.run_number }}
+          name: luci-app-server-ctl (${{ steps.ver.outputs.version }})
+          body: |
+            由 GitHub Actions 自动编译，基于 ImmortalWrt ${{ steps.ver.outputs.version }} SDK。
+            安装：`opkg install luci-app-server-ctl_*.ipk`（会自动拉取依赖 luci-base / wakeonlan / sshpass / openssh-client）。
+          files: ${{ env.IPK_DIR }}/*.ipk
