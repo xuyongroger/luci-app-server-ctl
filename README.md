@@ -35,7 +35,7 @@
 
 - `wakeonlan`：发送 WOL 魔术包（唤醒）
 - `sshpass` + `openssh-client`：非交互式 SSH 登录以执行挂起 / 关机
-- `luci-base`：LuCI 前端基础库（含 ucode rpcd 支持）
+- `luci-base`：LuCI 前端基础库；本应用以 **ucode 插件**形式挂入 rpcd，运行时需要 `rpcd-mod-ucode`（通常已随 `luci-base` 的依赖链引入）
 
 ## 配置说明（UCI: /etc/config/serverctl）
 
@@ -68,13 +68,14 @@ config serverctl 'defaults'
 | `hour` / `minute` | 执行时刻 | 0–23 / 0–59 |
 | `enabled` | 是否启用 | 开关 |
 
-> 说明：SSH 密码以明文存于 UCI 配置，请把该设备与管理员访问控制在可信范围内。
+> 说明：SSH 密码以明文存于 UCI 配置，且 ssh 使用 `StrictHostKeyChecking=no`（不校验远端主机密钥），请把该设备与管理员访问控制在可信的局域网范围内。
 
 ## 工作原理
 
 - `rpcd` ucode 后端（`/usr/share/rpcd/ucode/serverctl`）提供 `ping`、`sshtest`（读）与 `wake`、`suspend`、`poweroff`（写）方法，权限由 `/usr/share/rpcd/acl.d` 限定。
 - `procd` 服务 `/etc/init.d/serverctl`（`START=95`）常驻运行调度器 `/usr/bin/serverctl-scheduler`，每 3 秒检查一次；每当进入新的分钟时评估到期任务。
 - 调度使用系统时区（读取 `/etc/TZ`），`defaults.enabled=0` 时调度器跳过所有任务。
+- 远程命令经 `sshpass + ssh` 执行，固定使用 `-o StrictHostKeyChecking=no`、`-o UserKnownHostsFile=/dev/null` 且连接超时 5 秒；唤醒调用 `wakeonlan <mac>` 发送魔术包，挂起 / 关机分别在远端执行 `systemctl suspend` 与 `systemctl poweroff`。
 
 ## 安装
 
