@@ -117,10 +117,6 @@ const CTL_CSS = `
 	color: inherit;
 }
 
-.ctl-tabs-menu > .cbi-tab > a {
-	border-bottom: 2px solid currentColor;
-}
-
 /* Argon-like themes turn both .cbi-section and the tab panes (they carry
  * data-tab-title) into shadowed cards; nested, their edges stack into a
  * double border around each tab page. Flatten the sections inside the
@@ -144,8 +140,8 @@ const CTL_CSS = `
 
 /* Fuse the tab strip with the pane like argon's own tab pages do:
  * argon pulls the node following ".cbi-map > .cbi-tabmenu" up under the
- * tabs (-0.4375rem); square off the pane top corners and drop the gap so
- * the active tab rests on a single continuous card. */
+ * tabs (-0.4375rem); drop the gap so the active tab rests on a single
+ * continuous card, keeping the card's own rounded top corners. */
 .ctl-tabs-menu {
 	margin-bottom: 0;
 }
@@ -153,8 +149,6 @@ const CTL_CSS = `
 .ctl-tabs-pane[data-tab-title] {
 	margin-top: 0;
 	padding-top: 0;
-	border-top-left-radius: 0;
-	border-top-right-radius: 0;
 }
 
 /* Flat tab look as in stock argon tab pages: only the active tab is a
@@ -169,19 +163,10 @@ const CTL_CSS = `
 	background-color: var(--surface-color, rgba(128, 128, 128, 0.16));
 }
 
-/* Argon also draws its own thick underline on the active li (and on
- * hover); next to our anchor underline it reads as two stacked lines
- * on some viewports. Suppress the theme's li borders so a single flat
- * line under the label remains. */
-.ctl-tabs-menu > li,
-.ctl-tabs-menu > li:hover,
-.ctl-tabs-menu > li.cbi-tab {
-	border-bottom: 0;
-}
-
-.ctl-tabs-menu > li:hover > a {
-	border-bottom: 2px solid currentColor;
-}
+/* Keep the theme's own underline, which it draws on the active/hovered
+ * li itself: the li is positioned, so its border always paints above the
+ * raised card. Our own anchor underline was painted below the card and
+ * disappeared on desktop widths, so no extra underline is added here. */
 
 .ctl-manual {
 	margin-bottom: 1.25em;
