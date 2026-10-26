@@ -169,6 +169,20 @@ const CTL_CSS = `
 	background-color: var(--surface-color, rgba(128, 128, 128, 0.16));
 }
 
+/* Argon also draws its own thick underline on the active li (and on
+ * hover); next to our anchor underline it reads as two stacked lines
+ * on some viewports. Suppress the theme's li borders so a single flat
+ * line under the label remains. */
+.ctl-tabs-menu > li,
+.ctl-tabs-menu > li:hover,
+.ctl-tabs-menu > li.cbi-tab {
+	border-bottom: 0;
+}
+
+.ctl-tabs-menu > li:hover > a {
+	border-bottom: 2px solid currentColor;
+}
+
 .ctl-manual {
 	margin-bottom: 1.25em;
 }
@@ -356,7 +370,7 @@ const ManualSection = form.NamedSection.extend({
 		]);
 
 		const root = E('div', { 'class': 'cbi-section ctl-manual' },
-			[ heading, body, E('style', {}, CTL_CSS) ]);
+			[ heading, body ]);
 		root.setAttribute('data-ctl-area', this.ctlArea);
 		return root;
 	},
@@ -472,6 +486,11 @@ const ServerCtlMap = form.Map.extend({
 			}
 
 			const wrap = E('div', {});
+			/* Inject the local stylesheet here rather than inside
+			 * ManualSection: the section renders a bare "no servers"
+			 * placeholder when the list is empty, which would leave
+			 * the page unstyled; the map wrapper always renders. */
+			wrap.appendChild(E('style', {}, CTL_CSS));
 			wrap.appendChild(pane1);
 			wrap.appendChild(pane2);
 
