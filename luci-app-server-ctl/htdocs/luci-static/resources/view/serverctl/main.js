@@ -308,7 +308,8 @@ const ManualSection = form.NamedSection.extend({
 			mkrow('name', _('Name')),
 			mkrow('ip', _('IP Address')),
 			mkrow('mac', _('MAC Address')),
-			mkrow('user', _('Username'))
+			mkrow('user', _('Username')),
+			mkrow('os', _('System Type'))
 		];
 
 		const passToggle = E('button', {
@@ -369,6 +370,7 @@ const ManualSection = form.NamedSection.extend({
 		els.ip.textContent = s ? (s['ip'] || '—') : '—';
 		els.mac.textContent = s ? (s['mac'] || '—') : '—';
 		els.user.textContent = s ? (s['user'] || 'root') : '—';
+		els.os.textContent = s ? (s['os_type'] == 'windows' ? 'Windows' : 'Linux') : '—';
 
 		if (s && s['password'])
 			els.password.textContent = this.passShown ? s['password'] : '••••••';
@@ -636,6 +638,13 @@ return view.extend({
 		o.default = 'root';
 
 		o = s.option(form.Value, 'password', _('Password'));
+
+		o = s.option(form.ListValue, 'os_type', _('System Type'));
+		o.default = 'linux';
+		o.rmempty = false;
+		o.value('linux', 'Linux');
+		o.value('windows', 'Windows');
+		o.description = _('Linux runs systemctl over SSH; Windows runs rundll32/shutdown commands over SSH.');
 
 		return m.render();
 	}

@@ -143,6 +143,7 @@ table.cbi tr:hover td{background:#f9fbfd}
                 <b>IP 地址</b> <span id="i-ip" class="mono">—</span><br>
                 <b>MAC 地址</b> <span id="i-mac" class="mono">—</span><br>
                 <b>用户名</b> <span id="i-user" class="mono">—</span><br>
+                <b>系统类型</b> <span id="i-os">—</span><br>
                 <b>密码</b> <span id="i-pass" class="mono">—</span>
                 <button class="btn btn-link" id="pass-toggle" style="margin-left:6px">显示</button>
               </div>
@@ -179,7 +180,7 @@ table.cbi tr:hover td{background:#f9fbfd}
           <div class="grid-tools"><button class="btn btn-primary" onclick="openSrvDlg()">＋ 新建服务器</button></div>
           <div class="secbody" style="padding-top:0">
             <table class="cbi" id="srv-table">
-              <thead><tr><th>名称</th><th>IP 地址</th><th>MAC 地址</th><th>用户名</th><th>密码</th><th style="width:120px">编辑</th></tr></thead>
+              <thead><tr><th>名称</th><th>IP 地址</th><th>MAC 地址</th><th>用户名</th><th>密码</th><th>系统类型</th><th style="width:120px">编辑</th></tr></thead>
               <tbody></tbody>
             </table>
           </div>
@@ -236,6 +237,7 @@ table.cbi tr:hover td{background:#f9fbfd}
       <div class="fld"><label>MAC 地址</label><input class="txt mono" id="s-mac" placeholder="AA:BB:CC:DD:EE:FF"><div class="err" id="e-mac">MAC 地址格式无效</div></div>
       <div class="fld"><label>用户名</label><input class="txt mono" id="s-user" value="root"></div>
       <div class="fld"><label>密码</label><input class="txt mono" id="s-pass" type="password"></div>
+      <div class="fld"><label>系统类型</label><select id="s-os"><option value="linux">Linux</option><option value="windows">Windows</option></select></div>
     </div>
     <div class="dlgfoot">
       <button class="btn btn-negative" id="s-del" onclick="delSrvFromDlg()">删除</button>
@@ -263,9 +265,9 @@ table.cbi tr:hover td{background:#f9fbfd}
 'use strict';
 /* ---------- 模拟 UCI 数据（对应 /etc/config/serverctl） ---------- */
 let servers = [
-  { name:'NAS',      ip:'192.168.1.10', mac:'AA:BB:CC:DD:EE:01', user:'root',   password:'n@sPass1' },
-  { name:'DB',       ip:'192.168.1.11', mac:'AA:BB:CC:DD:EE:02', user:'dbuser', password:'db#secret' },
-  { name:'Workstation', ip:'192.168.1.50', mac:'',              user:'root',   password:'wspass' },
+  { name:'NAS',      ip:'192.168.1.10', mac:'AA:BB:CC:DD:EE:01', user:'root',   password:'n@sPass1', os:'linux' },
+  { name:'DB',       ip:'192.168.1.11', mac:'AA:BB:CC:DD:EE:02', user:'dbuser', password:'db#secret', os:'linux' },
+  { name:'Workstation', ip:'192.168.1.50', mac:'',              user:'winuser', password:'wspass',  os:'windows' },
 ];
 let tasks = [
   { server:'NAS',  action:'wake',     schedule:'daily',  hour:8,  minute:0,  enabled:true },
@@ -313,6 +315,7 @@ function updateInfo(){
   $('i-ip').textContent   = s ? s.ip : '—';
   $('i-mac').textContent  = s ? (s.mac || '—') : '—';
   $('i-user').textContent = s ? (s.user || 'root') : '—';
+  $('i-os').textContent   = s ? (s.os === 'windows' ? 'Windows' : 'Linux') : '—';
   $('i-pass').textContent = s ? (s.password ? (passShown ? s.password : '••••••') : '—') : '—';
   $('pass-toggle').textContent = passShown ? '隐藏' : '显示';
 }
@@ -326,8 +329,12 @@ const MOCK = {
   ping:  (s) => 'PING '+s.ip+' (192.168.1.x) 56(84) bytes of data.\n64 bytes from '+s.ip+': icmp_seq=1 ttl=64 time=0.42 ms\n64 bytes from '+s.ip+': icmp_seq=2 ttl=64 time=0.38 ms\n64 bytes from '+s.ip+': icmp_seq=3 ttl=64 time=0.41 ms\n\n--- '+s.ip+' ping statistics ---\n3 packets transmitted, 3 received, 0% packet loss',
   sshtest: (s) => 'serverctl: ssh login ok',
   wake:  (s) => 'Sending magic packet to '+s.mac+'\n1 packets sent',
-  suspend:  () => '(通过 SSH 以 root 执行 systemctl suspend --ignore-inhibitors，无回显)',
-  poweroff: () => '(通过 SSH 以 root 执行 systemctl poweroff，无回显)',
+  suspend:  (s) => s.os === 'windows'
+    ? '(通过 SSH 执行 rundll32.exe powrprof.dll,SetSuspendState 0,1,0，无回显)'
+    : '(通过 SSH 以 root 执行 systemctl suspend --ignore-inhibitors，无回显)',
+  poweroff: (s) => s.os === 'windows'
+    ? '(通过 SSH 执行 shutdown /s /t 0，无回显)'
+    : '(通过 SSH 以 root 执行 systemctl poweroff，无回显)',
 };
 
 document.querySelectorAll('.manual-area .btn[data-act]').forEach(b => {
@@ -361,17 +368,19 @@ function renderSrvTable(){
   tb.innerHTML = servers.map((s,i) =>
     '<tr><td>'+esc(s.name)+'</td><td class="mono">'+esc(s.ip)+'</td><td class="mono">'+esc(s.mac||'—')+
     '</td><td class="mono">'+esc(s.user||'root')+'</td><td class="mono">••••••</td>'+
+    '<td>'+(s.os === 'windows' ? 'Windows' : 'Linux')+'</td>'+
     '<td><button class="btn btn-mini" onclick="openSrvDlg('+i+')">✎ 编辑</button>'+
     '<button class="btn btn-mini btn-negative" onclick="delSrv('+i+')">✕</button></td></tr>').join('') ||
-    '<tr><td colspan="6" style="color:#999;text-align:center">尚无服务器，点击右上方“新建服务器”添加。</td></tr>';
+    '<tr><td colspan="7" style="color:#999;text-align:center">尚无服务器，点击右上方“新建服务器”添加。</td></tr>';
 }
 function openSrvDlg(i){
   $('srv-dlg-title').textContent = (i==null ? '新建服务器' : '编辑服务器');
   $('s-idx').value = (i==null ? -1 : i);
   $('s-del').style.display = i==null ? 'none' : '';
-  const s = i==null ? {name:'',ip:'',mac:'',user:'root',password:''} : servers[i];
+  const s = i==null ? {name:'',ip:'',mac:'',user:'root',password:'',os:'linux'} : servers[i];
   $('s-name').value=s.name; $('s-ip').value=s.ip; $('s-mac').value=s.mac;
   $('s-user').value=s.user||'root'; $('s-pass').value=s.password;
+  $('s-os').value=s.os||'linux';
   $('e-ip').style.display='none'; $('e-mac').style.display='none';
   show('srv-dlg');
 }
@@ -382,7 +391,7 @@ function saveSrv(){
   $('e-ip').style.display  = /^(\d{1,3}\.){3}\d{1,3}$|^[a-zA-Z0-9.\-_]+$/.test(ip) ? 'none' : (bad=true,'block');
   $('e-mac').style.display = (mac===''||/^([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$/.test(mac)) ? 'none' : (bad=true,'block');
   if (!name || bad) return;
-  const obj = { name, ip, mac, user:$('s-user').value.trim()||'root', password:$('s-pass').value };
+  const obj = { name, ip, mac, user:$('s-user').value.trim()||'root', password:$('s-pass').value, os:$('s-os').value };
   if (i < 0) servers.push(obj); else servers[i] = obj;
   hide('srv-dlg'); bumpDirty(); renderAll(); toast('已暂存更改，点击“保存并应用”生效');
 }

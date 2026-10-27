@@ -85,6 +85,14 @@ config server 'db'
 	option user 'dbuser'
 	option password 'pw2'
 
+config server 'win'
+	option name 'WIN'
+	option ip '192.0.2.12'
+	option mac 'AA:BB:CC:DD:EE:03'
+	option user 'admin'
+	option password 'pw3'
+	option os_type 'windows'
+
 config task 't_daily_match'
 	option schedule 'daily'
 	option hour '$NOW_H'
@@ -152,6 +160,20 @@ config task 't_badserver'
 	option minute '$NOW_M'
 	option action 'wake'
 	option server 'NOPE'
+
+config task 't_win_suspend'
+	option schedule 'daily'
+	option hour '$NOW_H'
+	option minute '$NOW_M'
+	option action 'suspend'
+	option server 'WIN'
+
+config task 't_win_off'
+	option schedule 'daily'
+	option hour '$NOW_H'
+	option minute '$NOW_M'
+	option action 'poweroff'
+	option server 'WIN'
 EOF
 
 : > $LOG
@@ -165,18 +187,25 @@ echo "$OUT" | grep -q "t_daily_match NAS wake"            && ok "daily 匹配任
 echo "$OUT" | grep -q "t_daily_match.*code=0"            && ok "wake 成功 code=0"          || bad "wake 成功 code=0"
 echo "$OUT" | grep -q "t_weekly_right DB ping"           && ok "weekly 星期匹配执行"       || bad "weekly 星期匹配执行"
 echo "$OUT" | grep -q "t_once_today DB poweroff"         && ok "once 当日任务执行"         || bad "once 当日任务执行"
+echo "$OUT" | grep -q "t_win_suspend WIN suspend"        && ok "Windows 休眠任务执行"      || bad "Windows 休眠任务执行"
+echo "$OUT" | grep -q "t_win_off WIN poweroff"           && ok "Windows 关机任务执行"      || bad "Windows 关机任务执行"
 echo "$OUT" | grep -q "t_missing_mac DB wake.*mac address missing" && ok "缺 MAC 拒绝唤醒"  || bad "缺 MAC 拒绝唤醒"
 echo "$OUT" | grep -q "t_badserver NOPE.*server not found" && ok "未知服务器报错" || bad "未知服务器报错"
 echo "$OUT" | grep -q "t_daily_nomatch"                  && bad "非匹配分钟不执行" || ok "非匹配分钟不执行"
 echo "$OUT" | grep -q "t_disabled"                       && bad "disabled 任务不执行" || ok "disabled 任务不执行"
 echo "$OUT" | grep -q "t_weekly_wrong"                   && bad "weekly 星期不匹配不执行" || ok "weekly 星期不匹配不执行"
 echo "$OUT" | grep -q "t_once_future"                    && bad "once 非当日不执行" || ok "once 非当日不执行"
-[ $(echo "$OUT" | grep -c .) -eq 5 ] && ok "恰好执行 5 个匹配任务(含 2 个预期失败)" || bad "恰好执行 5 个匹配任务: [$(echo "$OUT" | grep -c .)]"
+[ $(echo "$OUT" | grep -c .) -eq 7 ] && ok "恰好执行 7 个匹配任务(含 2 个预期失败)" || bad "恰好执行 7 个匹配任务: [$(echo "$OUT" | grep -c .)]"
 
 grep -q "^etherwake -i eth0 AA:BB:CC:DD:EE:01$" $LOG && ok "etherwake 以配置接口+MAC 调用" || bad "etherwake 调用参数: $(cat $LOG)"
+# DB 未设 os_type，应按 Linux 默认走 systemctl
 grep -q "systemctl poweroff" $LOG                       && ok "poweroff 经 ssh 执行" || bad "poweroff 经 ssh 执行"
 grep -Fq "sshpass -p pw2 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 dbuser@192.0.2.11 systemctl poweroff" $LOG \
 	&& ok "ssh 命令行完整(用户/选项/命令正确)" || bad "ssh 命令行完整: $(grep poweroff $LOG)"
+grep -Fq "sshpass -p pw3 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 admin@192.0.2.12 rundll32.exe powrprof.dll,SetSuspendState 0,1,0" $LOG \
+	&& ok "Windows 休眠命令正确(rundll32)" || bad "Windows 休眠命令: $(grep 192.0.2.12 $LOG)"
+grep -Fq "sshpass -p pw3 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 admin@192.0.2.12 shutdown /s /t 0" $LOG \
+	&& ok "Windows 关机命令正确(shutdown)" || bad "Windows 关机命令: $(grep 192.0.2.12 $LOG)"
 grep -q "^ping -c 3 -W 2 192.0.2.11$" $LOG             && ok "ping 参数正确" || bad "ping 参数正确"
 
 # once 任务执行后应删除，其他任务保留

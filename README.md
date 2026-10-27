@@ -15,11 +15,11 @@
   - **Ping 测试** —— 检测设备是否在线
   - **SSH 测试** —— 验证 SSH 凭据是否可用
   - **唤醒（Wake）** —— 基于 MAC 地址的 Wake-on-LAN 魔术包
-  - **挂起（Suspend）** —— 通过 SSH 远程挂起
-  - **关机（Power Off）** —— 通过 SSH 远程关机
+  - **挂起（Suspend）** —— 通过 SSH 远程挂起（支持 Linux 与 Windows）
+  - **关机（Power Off）** —— 通过 SSH 远程关机（支持 Linux 与 Windows）
   - 挂起 / 关机会先弹出二次确认，避免误操作
 - **定时任务**：为某台服务器按 **每天 / 每周 / 单次** 计划在指定时间点执行唤醒、挂起或关机；单次任务执行后自动删除。
-- **服务器清单**：集中维护服务器的名称、IP、MAC、SSH 用户名与密码，供手动控制与定时任务复用。
+- **服务器清单**：集中维护服务器的名称、IP、MAC、SSH 用户名与密码、系统类型，供手动控制与定时任务复用。
 - **总开关**：可一键停用全部定时调度，不影响手动控制。
 
 界面位于 LuCI 菜单 **服务 → Server Control**，分为两个标签页：
@@ -58,6 +58,7 @@ config serverctl 'defaults'
 | `mac` | MAC 地址（WOL 用） | 必填 |
 | `user` | SSH 用户名 | 默认 `root` |
 | `password` | SSH 密码 | 用于 sshpass 登录 |
+| `os_type` | 系统类型 | `linux`（默认）/ `windows`，决定休眠 / 关机执行的远端命令 |
 
 定时任务条目（Scheduled Tasks）：
 
@@ -78,7 +79,21 @@ config serverctl 'defaults'
 - `rpcd` ucode 后端（`/usr/share/rpcd/ucode/serverctl`）提供 `ping`、`sshtest`（读）与 `wake`、`suspend`、`poweroff`（写）方法，权限由 `/usr/share/rpcd/acl.d` 限定。
 - `procd` 服务 `/etc/init.d/serverctl`（`START=95`）常驻运行调度器 `/usr/bin/serverctl-scheduler`，每 3 秒检查一次；每当进入新的分钟时评估到期任务。
 - 调度使用系统时区（读取 `/etc/TZ`），`defaults.enabled=0` 时调度器跳过所有任务。
-- 远程命令经 `sshpass + ssh` 执行，固定使用 `-o StrictHostKeyChecking=no`、`-o UserKnownHostsFile=/dev/null` 且连接超时 5 秒；唤醒调用 `etherwake -i <接口> <mac>` 在局域网二层发送魔术包（接口取 `defaults.wol_interface`，缺省 `eth0`；显式置空则退化为不带 `-i` 的 `etherwake <mac>`），挂起在远端执行 `systemctl suspend --ignore-inhibitors`（忽略应用持有的休眠抑制锁，保证用户明确指令必然生效），关机执行 `systemctl poweroff`。
+- 远程命令经 `sshpass + ssh` 执行，固定使用 `-o StrictHostKeyChecking=no`、`-o UserKnownHostsFile=/dev/null` 且连接超时 5 秒；唤醒调用 `etherwake -i <接口> <mac>` 在局域网二层发送魔术包（接口取 `defaults.wol_interface`，缺省 `eth0`；显式置空则退化为不带 `-i` 的 `etherwake <mac>`），按服务器条目的 `os_type` 分发休眠 / 关机命令：Linux（默认）执行 `systemctl suspend --ignore-inhibitors`（忽略应用持有的休眠抑制锁，保证用户明确指令必然生效）与 `systemctl poweroff`；Windows 执行 `rundll32.exe powrprof.dll,SetSuspendState 0,1,0` 与 `shutdown /s /t 0`。
+
+## Windows 目标机设置
+
+要让插件通过 SSH 控制 Windows 10 / 11 电脑，需先在目标机上启用 OpenSSH 服务器：
+
+1. **管理员 PowerShell** 执行 `Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0` 安装（或在 设置 → 应用 → 可选功能 中添加 "OpenSSH 服务器"）；
+2. `Start-Service sshd` 启动服务，`Set-Service -Name sshd -StartupType Automatic` 设为开机自启；
+3. 在插件的服务器条目中填写该机的**本地管理员账户**用户名与**密码**（不能是 PIN / Windows Hello；账户必须设密码，空密码会被拒绝），**系统类型** 选择 `Windows`。非管理员账户的关机 / 休眠通常会被系统以权限不足拒绝，不建议使用。
+
+行为与注意事项：
+
+- **休眠**执行 `rundll32.exe powrprof.dll,SetSuspendState 0,1,0`，请求进入**睡眠**（具体是 S3 还是 S0ix 现代待机由设备决定）。⚠️ 若系统启用了休眠功能（`powercfg /h on`，许多 Win11 设备默认开启），Windows 会转而进入**休眠(S4)**；想要真正的睡眠，请先在目标机执行 `powercfg /h off`。
+- **关机**执行 `shutdown /s /t 0`，立即关机。
+- **WOL 唤醒**：在设备管理器网卡属性中勾选"允许此设备唤醒计算机"；能否从睡眠 / 休眠 / 关机唤醒取决于硬件（不少机器休眠或关机后网卡断电、无法唤醒，睡眠反而可以），以实测为准。
 
 ## 安装
 

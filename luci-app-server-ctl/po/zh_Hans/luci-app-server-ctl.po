@@ -37,6 +37,12 @@ msgstr "MAC 地址"
 msgid "Username"
 msgstr "用户名"
 
+msgid "System Type"
+msgstr "系统类型"
+
+msgid "Linux runs systemctl over SSH; Windows runs rundll32/shutdown commands over SSH."
+msgstr "Linux 通过 SSH 执行 systemctl 命令；Windows 通过 SSH 执行 rundll32/shutdown 命令。"
+
 msgid "Password"
 msgstr "密码"
 

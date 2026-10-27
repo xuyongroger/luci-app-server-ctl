@@ -55,6 +55,10 @@ function ssh_argv(server, cmd) {
 		cmd];
 }
 
+function is_windows(s) {
+	return str(s['os_type']) == 'windows';
+}
+
 function find_server(name) {
 	const ctx = get_cursor();
 	const all = ctx.get_all('serverctl');
@@ -104,12 +108,21 @@ const actions = {
 	},
 
 	suspend: function(s) {
+		/* Windows: rundll32 SetSuspendState(0,1,0) requests sleep (S3/S0ix).
+		 * Caveat: with hibernation enabled (powercfg /h on) Windows falls
+		 * back to hibernation; see README for details. */
+		if (is_windows(s))
+			return run(ssh_argv(s, 'rundll32.exe powrprof.dll,SetSuspendState 0,1,0'));
+
 		/* --ignore-inhibitors: remote apps (package managers, nfsd, etc.) may
 		 * hold logind block inhibitor locks; an explicit user action wins. */
 		return run(ssh_argv(s, 'systemctl suspend --ignore-inhibitors'));
 	},
 
 	poweroff: function(s) {
+		if (is_windows(s))
+			return run(ssh_argv(s, 'shutdown /s /t 0'));
+
 		return run(ssh_argv(s, 'systemctl poweroff'));
 	},
 };
