@@ -326,7 +326,7 @@ const MOCK = {
   ping:  (s) => 'PING '+s.ip+' (192.168.1.x) 56(84) bytes of data.\n64 bytes from '+s.ip+': icmp_seq=1 ttl=64 time=0.42 ms\n64 bytes from '+s.ip+': icmp_seq=2 ttl=64 time=0.38 ms\n64 bytes from '+s.ip+': icmp_seq=3 ttl=64 time=0.41 ms\n\n--- '+s.ip+' ping statistics ---\n3 packets transmitted, 3 received, 0% packet loss',
   sshtest: (s) => 'serverctl: ssh login ok',
   wake:  (s) => 'Sending magic packet to '+s.mac+'\n1 packets sent',
-  suspend:  () => '(通过 SSH 以 root 执行 systemctl suspend，无回显)',
+  suspend:  () => '(通过 SSH 以 root 执行 systemctl suspend --ignore-inhibitors，无回显)',
   poweroff: () => '(通过 SSH 以 root 执行 systemctl poweroff，无回显)',
 };
 

@@ -78,7 +78,7 @@ config serverctl 'defaults'
 - `rpcd` ucode 后端（`/usr/share/rpcd/ucode/serverctl`）提供 `ping`、`sshtest`（读）与 `wake`、`suspend`、`poweroff`（写）方法，权限由 `/usr/share/rpcd/acl.d` 限定。
 - `procd` 服务 `/etc/init.d/serverctl`（`START=95`）常驻运行调度器 `/usr/bin/serverctl-scheduler`，每 3 秒检查一次；每当进入新的分钟时评估到期任务。
 - 调度使用系统时区（读取 `/etc/TZ`），`defaults.enabled=0` 时调度器跳过所有任务。
-- 远程命令经 `sshpass + ssh` 执行，固定使用 `-o StrictHostKeyChecking=no`、`-o UserKnownHostsFile=/dev/null` 且连接超时 5 秒；唤醒调用 `etherwake -i <接口> <mac>` 在局域网二层发送魔术包（接口取 `defaults.wol_interface`，缺省 `eth0`；显式置空则退化为不带 `-i` 的 `etherwake <mac>`），挂起 / 关机分别在远端执行 `systemctl suspend` 与 `systemctl poweroff`。
+- 远程命令经 `sshpass + ssh` 执行，固定使用 `-o StrictHostKeyChecking=no`、`-o UserKnownHostsFile=/dev/null` 且连接超时 5 秒；唤醒调用 `etherwake -i <接口> <mac>` 在局域网二层发送魔术包（接口取 `defaults.wol_interface`，缺省 `eth0`；显式置空则退化为不带 `-i` 的 `etherwake <mac>`），挂起在远端执行 `systemctl suspend --ignore-inhibitors`（忽略应用持有的休眠抑制锁，保证用户明确指令必然生效），关机执行 `systemctl poweroff`。
 
 ## 安装
 

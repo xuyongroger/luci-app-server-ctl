@@ -104,7 +104,9 @@ const actions = {
 	},
 
 	suspend: function(s) {
-		return run(ssh_argv(s, 'systemctl suspend'));
+		/* --ignore-inhibitors: remote apps (package managers, nfsd, etc.) may
+		 * hold logind block inhibitor locks; an explicit user action wins. */
+		return run(ssh_argv(s, 'systemctl suspend --ignore-inhibitors'));
 	},
 
 	poweroff: function(s) {
