@@ -33,7 +33,7 @@
 +luci-base +etherwake +sshpass +openssh-client
 ```
 
-- `etherwake`：以二层以太网帧发送 WOL 魔术包（唤醒）。相比 `wakeonlan`（perl 脚本，会拉入整套 perl），`etherwake` 仅依赖 `libc`，更轻量；代价是只在**同一二层广播域**内有效，需指定 LAN 接口（见下 `wol_interface`）
+- `etherwake`：以二层以太网帧发送 WOL 魔术包（唤醒）。相比 `wakeonlan`（perl 脚本，会拉入整套 perl），`etherwake` 仅依赖 `libc`，更轻量；代价是只在**同一二层广播域**内有效，需指定发送网口（见下 `wol_interface`）
 - `sshpass` + `openssh-client`：非交互式 SSH 登录以执行挂起 / 关机
 - `luci-base`：LuCI 前端基础库；本应用以 **ucode 插件**形式挂入 rpcd，运行时需要 `rpcd-mod-ucode`（通常已随 `luci-base` 的依赖链引入）
 
@@ -44,10 +44,10 @@
 ```sh
 config serverctl 'defaults'
     option enabled '1'         # 设为 0 可停用全部定时任务
-    option wol_interface 'br-lan'  # 唤醒(WOL)发送魔术包的 LAN 接口；置空则不带 -i
+    option wol_interface 'eth0'   # 唤醒(WOL)发送魔术包的网络接口；置空则不带 -i
 ```
 
-> `wol_interface`：`etherwake` 走二层帧，默认接口是 `eth0`（多数路由上是 WAN），故本插件默认改用 LAN 桥 `br-lan`。若你的 LAN 不是 `br-lan`（例如直接用 `eth0` 或别的网桥名），改成对应接口即可：`uci set serverctl.defaults.wol_interface=eth1 && uci commit serverctl`。
+> `wol_interface`：`etherwake` 走二层帧，本插件默认从 `eth0` 发送魔术包。若你的目标机不挂在 `eth0`（例如挂在网桥 `br-lan` 或其它网口上），改成对应接口即可：`uci set serverctl.defaults.wol_interface=br-lan && uci commit serverctl`。
 
 服务器条目（Server Maintenance）：
 
@@ -78,7 +78,7 @@ config serverctl 'defaults'
 - `rpcd` ucode 后端（`/usr/share/rpcd/ucode/serverctl`）提供 `ping`、`sshtest`（读）与 `wake`、`suspend`、`poweroff`（写）方法，权限由 `/usr/share/rpcd/acl.d` 限定。
 - `procd` 服务 `/etc/init.d/serverctl`（`START=95`）常驻运行调度器 `/usr/bin/serverctl-scheduler`，每 3 秒检查一次；每当进入新的分钟时评估到期任务。
 - 调度使用系统时区（读取 `/etc/TZ`），`defaults.enabled=0` 时调度器跳过所有任务。
-- 远程命令经 `sshpass + ssh` 执行，固定使用 `-o StrictHostKeyChecking=no`、`-o UserKnownHostsFile=/dev/null` 且连接超时 5 秒；唤醒调用 `etherwake -i <LAN接口> <mac>` 在局域网二层发送魔术包（LAN 接口取 `defaults.wol_interface`，缺省 `br-lan`；显式置空则退化为不带 `-i` 的 `etherwake <mac>`），挂起 / 关机分别在远端执行 `systemctl suspend` 与 `systemctl poweroff`。
+- 远程命令经 `sshpass + ssh` 执行，固定使用 `-o StrictHostKeyChecking=no`、`-o UserKnownHostsFile=/dev/null` 且连接超时 5 秒；唤醒调用 `etherwake -i <接口> <mac>` 在局域网二层发送魔术包（接口取 `defaults.wol_interface`，缺省 `eth0`；显式置空则退化为不带 `-i` 的 `etherwake <mac>`），挂起 / 关机分别在远端执行 `systemctl suspend` 与 `systemctl poweroff`。
 
 ## 安装
 
