@@ -91,7 +91,11 @@ jobs:
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
-          sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          # 注意：ubuntu-24.04 的主源是 deb822 格式的 /etc/apt/sources.list.d/ubuntu.sources，
+          # 不能像 22.04 那样整目录清空 sources.list.d/*，否则主源被删、apt 全装不上。
+          # 这里只删第三方源文件(dotnet/azure 等)，保留 ubuntu.sources。
+          sudo find /etc/apt/sources.list.d -maxdepth 1 -type f ! -name 'ubuntu.sources' -delete
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
           sudo -E apt-get -qq update
           sudo -E apt-get -qq install -y --no-install-recommends \
             build-essential clang flex bison g++ gawk gcc-multilib g++-multilib \
