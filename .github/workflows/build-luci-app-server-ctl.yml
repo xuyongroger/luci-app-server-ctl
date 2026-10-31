@@ -17,7 +17,7 @@
 #
 # 触发方式：
 #   - Actions 页面手动 Run workflow（workflow_dispatch），可填写参数
-#   - repository_dispatch（外部 API 触发）
+#   - repository_dispatch（外部 API 触发，仅响应 types: build 事件）
 #
 # 产出：
 #   - Actions Artifacts：luci-app-server-ctl_*.ipk
@@ -28,6 +28,9 @@ name: Build luci-app-server-ctl
 
 on:
   repository_dispatch:
+    # 显式限定事件类型，避免任意外部 dispatch 都能触发构建
+    types:
+      - build
   workflow_dispatch:
     inputs:
       iw_version:
@@ -56,15 +59,28 @@ env:
   TZ: Asia/Shanghai
 
 permissions:
-  contents: write
+  # 最小权限原则：build job 只需只读仓库内容；创建 Release 所需的
+  # contents: write 由独立的 release job 单独持有（见文件末尾）。
+  contents: read
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    # runner 镜像：ubuntu-22.04 已过 GitHub 托管退役期，改用 24.04；
+    # 注意 24.04 的 apt 源不再提供 python3-distutils（Python 3.12 移除了 distutils），
+    # 若保留该包名 apt 安装会直接失败。
+    runs-on: ubuntu-24.04
+
+    # 供 release job 使用：SDK 版本(拼产物名)、构建号(写 Release 正文)、ipk 是否产出
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+      build_id: ${{ steps.buildid.outputs.build_id }}
+      ipk_ok: ${{ steps.collect.outputs.status }}
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        # actions 钉到 commit SHA（供应链加固），行尾注释标注对应版本；
+        # 升级时由 dependabot（见 .github/dependabot.yml）提 PR 同步更新。
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Resolve version
         id: ver
@@ -80,7 +96,7 @@ jobs:
           sudo -E apt-get -qq install -y --no-install-recommends \
             build-essential clang flex bison g++ gawk gcc-multilib g++-multilib \
             gettext git libncurses5-dev libncursesw5-dev libssl-dev \
-            python3 python3-setuptools python3-pip python3-distutils rsync swig \
+            python3 python3-setuptools python3-pip rsync swig \
             unzip zlib1g-dev file wget curl ca-certificates zstd time subversion \
             libelf-dev cmake meson ninja-build pkg-config libjson-c-dev
           sudo -E apt-get -qq autoremove --purge
@@ -89,6 +105,23 @@ jobs:
           # 在更大盘符上工作，避免默认盘空间不足
           sudo mkdir -p /workdir
           sudo chown "$USER":"$GROUPS" /workdir
+
+      - name: Run repo self-tests
+        # 编译 SDK 前先跑仓库自带测试（tests/run-tests.sh：静态检查 + ucode/uci 行为测试）。
+        # runner 自带 node；uci 由 Ubuntu 官方源安装；ucode 无 Ubuntu 包，尝试一次快速
+        # 源码构建（约 1 分钟）。装不上则脚本内断言失败，但整步不阻断 .ipk 产出
+        # （continue-on-error，问题在步骤上以红色标示可查）。脚本会向 /usr/share、
+        # /usr/local/bin 部署被测文件，故以 root 运行并透传 PATH 以便找到 node/ucode。
+        continue-on-error: true
+        shell: bash
+        run: |
+          sudo -E apt-get -qq install -y --no-install-recommends uci
+          command -v ucode >/dev/null || {
+            git clone --depth 1 https://github.com/xdarklight/ucode /tmp/ucode-src
+            make -C /tmp/ucode-src -j"$(nproc)" \
+              && sudo install -m 0755 /tmp/ucode-src/ucode /usr/local/bin/ucode
+          }
+          sudo env PATH="$PATH" bash tests/run-tests.sh
 
       - name: Resolve build version
         id: buildid
@@ -172,7 +205,7 @@ jobs:
           echo "OK: $PKG_NAME -> $(readlink -f "package/feeds/luci/$PKG_NAME")"
 
       - name: SSH connection to Actions
-        uses: mxschmitt/action-tmate@v3
+        uses: mxschmitt/action-tmate@35b54afac29c97fb54faba5b513f8fbd1882f113 # v3.24
         continue-on-error: true
         if: github.event.inputs.ssh == 'true'
         with:
@@ -288,7 +321,7 @@ jobs:
 
       - name: Upload failure logs
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: build-logs-${{ github.run_number }}
           path: |
@@ -313,22 +346,37 @@ jobs:
           ls -lh "$GITHUB_WORKSPACE/ipk"
 
       - name: Upload ipk as artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: steps.collect.outputs.status == 'success' && !cancelled()
         with:
           name: luci-app-server-ctl-ipk-${{ steps.ver.outputs.version }}-${{ github.run_number }}
           path: ${{ env.IPK_DIR }}
           if-no-files-found: error
 
-      - name: Create release
-        if: github.event.inputs.upload_release == 'true' && steps.collect.outputs.status == 'success' && !cancelled()
-        uses: softprops/action-gh-release@v2
+  # ── release job：全流程中唯一持有 contents: write 的 job ──────────────
+  # build job 以只读权限运行；.ipk 经 Actions artifact 跨 job 传递。
+  # 仅当手动触发勾选了 upload_release 且 ipk 确实产出时才执行。
+  release:
+    needs: build
+    if: github.event.inputs.upload_release == 'true' && needs.build.outputs.ipk_ok == 'success'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download ipk artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          tag_name: ${{ env.PKG_NAME }}-${{ steps.ver.outputs.version }}-${{ github.run_number }}
-          name: luci-app-server-ctl (${{ steps.ver.outputs.version }})
+          name: luci-app-server-ctl-ipk-${{ needs.build.outputs.version }}-${{ github.run_number }}
+          path: ipk
+
+      - name: Create release
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
+        with:
+          tag_name: ${{ env.PKG_NAME }}-${{ needs.build.outputs.version }}-${{ github.run_number }}
+          name: luci-app-server-ctl (${{ needs.build.outputs.version }})
           body: |
-            由 GitHub Actions 自动编译，基于 ImmortalWrt ${{ steps.ver.outputs.version }} SDK。
-            构建版本号：`${{ steps.buildid.outputs.build_id }}`（已写入 ipk 文件名）。
+            由 GitHub Actions 自动编译，基于 ImmortalWrt ${{ needs.build.outputs.version }} SDK。
+            构建版本号：`${{ needs.build.outputs.build_id }}`（已写入 ipk 文件名）。
             安装：`opkg install luci-app-server-ctl_*.ipk luci-i18n-server-ctl-zh-cn_*.ipk`（会自动拉取依赖 luci-base / etherwake / sshpass / openssh-client）。
             升级覆盖：如遇 opkg 提示已安装同版本而跳过，可用 `opkg install <ipk> --force-reinstall` 强制覆盖。
-          files: ${{ env.IPK_DIR }}/*.ipk
+          files: ipk/*.ipk
