@@ -115,7 +115,10 @@ jobs:
         # runner 自带 node；uci/ucode 在 Ubuntu 官方源中均不存在（都是 OpenWrt 组件），
         # 且被测 core.uc 用到 ucode 的 uci 模块，故按依赖链从上游源码快速构建(约 2 分钟)：
         #   libubox -> uci(uci CLI + libuci) -> ucode
-        # （uci 关闭 Lua 绑定 BUILD_LUA=OFF；ucode 的 uci 模块链接需要 libubox+libuci）
+        # （uci/libubox 关闭 Lua 绑定 BUILD_LUA=OFF；ucode 的 uci 模块链接需要 libubox+libuci）
+        # 三者均钉到 ImmortalWrt 24.10 打包所用的 commit（见 immortalwrt/openwrt-24.10
+        # 对应包 Makefile 的 PKG_SOURCE_VERSION），保证 CI 语义与目标设备一致，
+        # 不受上游 master 漂移影响（如 ucode index() 未命中返回值 null -> -1 的变更）。
         # ucode 的 cmake 检测到 libuci+libubox 后启用 UCI_SUPPORT；其模块搜索路径是
         # 编译期写死的 ${CMAKE_INSTALL_PREFIX}/lib/ucode，故三者统一 cmake --install
         # 到 /usr/local（模块 .so 落 /usr/local/lib/ucode），随后 ldconfig 刷新。
@@ -126,13 +129,17 @@ jobs:
         shell: bash
         run: |
           [ -f /usr/local/lib/libubox.so ] || {
-            git clone --depth 1 https://github.com/openwrt/libubox.git /tmp/libubox-src
+            git init -q /tmp/libubox-src
+            git -C /tmp/libubox-src fetch --depth 1 https://github.com/openwrt/libubox.git 49056d178f42da98048a5d4c23f83a6f6bc6dd80
+            git -C /tmp/libubox-src checkout -q FETCH_HEAD
             cmake -S /tmp/libubox-src -B /tmp/libubox-build -DCMAKE_BUILD_TYPE=Release -DBUILD_LUA=OFF
             cmake --build /tmp/libubox-build -j"$(nproc)"
             sudo cmake --install /tmp/libubox-build
           }
           command -v uci >/dev/null || {
-            git clone --depth 1 https://github.com/openwrt/uci.git /tmp/uci-src
+            git init -q /tmp/uci-src
+            git -C /tmp/uci-src fetch --depth 1 https://github.com/openwrt/uci.git 16ff0badbde7e17ec3bd1f827ffe45922956cf86
+            git -C /tmp/uci-src checkout -q FETCH_HEAD
             # BUILD_LUA=OFF：Lua 绑定在 Ubuntu 上找不到 lua5.1 且测试用不到
             cmake -S /tmp/uci-src -B /tmp/uci-build -DCMAKE_BUILD_TYPE=Release -DBUILD_LUA=OFF
             cmake --build /tmp/uci-build -j"$(nproc)"
@@ -140,7 +147,9 @@ jobs:
           }
           sudo ldconfig
           command -v ucode >/dev/null || {
-            git clone --depth 1 https://github.com/ucode-lang/ucode.git /tmp/ucode-src
+            git init -q /tmp/ucode-src
+            git -C /tmp/ucode-src fetch --depth 1 https://github.com/ucode-lang/ucode.git 3f64c8089bf3ea4847c96b91df09fbfcaec19e1d
+            git -C /tmp/ucode-src checkout -q FETCH_HEAD
             cmake -S /tmp/ucode-src -B /tmp/ucode-build \
               -DCMAKE_BUILD_TYPE=Release -DFS_SUPPORT=ON -DUCI_SUPPORT=ON
             cmake --build /tmp/ucode-build -j"$(nproc)"
