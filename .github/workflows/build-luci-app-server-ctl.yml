@@ -122,10 +122,9 @@ jobs:
         # ucode 的 cmake 检测到 libuci+libubox 后启用 UCI_SUPPORT；其模块搜索路径是
         # 编译期写死的 ${CMAKE_INSTALL_PREFIX}/lib/ucode，故三者统一 cmake --install
         # 到 /usr/local（模块 .so 落 /usr/local/lib/ucode），随后 ldconfig 刷新。
-        # 装不上则脚本内断言失败，但整步不阻断 .ipk 产出
-        # （continue-on-error，问题在步骤上以红色标示可查）。脚本会向 /usr/share、
+        # 装不上或断言失败则整步失败，阻断后续 .ipk 产出（自测是发版门槛）。
+        # 脚本会向 /usr/share、
         # /usr/local/bin 部署被测文件，故以 root 运行并透传 PATH 以便找到 node/ucode。
-        continue-on-error: true
         shell: bash
         run: |
           [ -f /usr/local/lib/libubox.so ] || {
