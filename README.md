@@ -44,7 +44,7 @@
 ```sh
 config serverctl 'defaults'
     option enabled '1'         # 设为 0 可停用全部定时任务
-    option wol_interface 'eth0'   # 唤醒(WOL)发送魔术包的网络接口；置空则不带 -i
+    option wol_interface 'eth0'   # 唤醒(WOL)发送魔术包的网络接口；缺省 eth0
 ```
 
 > `wol_interface`：`etherwake` 走二层帧，本插件默认从 `eth0` 发送魔术包。若你的目标机不挂在 `eth0`（例如挂在网桥 `br-lan` 或其它网口上），改成对应接口即可：`uci set serverctl.defaults.wol_interface=br-lan && uci commit serverctl`。
@@ -79,7 +79,7 @@ config serverctl 'defaults'
 - `rpcd` ucode 后端（`/usr/share/rpcd/ucode/serverctl`）提供 `ping`、`sshtest`（读）与 `wake`、`suspend`、`poweroff`（写）方法，权限由 `/usr/share/rpcd/acl.d` 限定。
 - `procd` 服务 `/etc/init.d/serverctl`（`START=95`）常驻运行调度器 `/usr/bin/serverctl-scheduler`，每 3 秒检查一次；每当进入新的分钟时评估到期任务。
 - 调度使用系统时区（服务启动时读取 `/etc/TZ`），`defaults.enabled=0` 时调度器跳过所有任务。**变更系统时区后需 `/etc/init.d/serverctl restart`**，否则已运行的调度器仍按旧时区触发定时任务。
-- 远程命令经 `sshpass + ssh` 执行，固定使用 `-o StrictHostKeyChecking=no`、`-o UserKnownHostsFile=/dev/null` 且连接超时 5 秒；唤醒调用 `etherwake -i <接口> <mac>` 在局域网二层发送魔术包（接口取 `defaults.wol_interface`，缺省 `eth0`；显式置空则退化为不带 `-i` 的 `etherwake <mac>`），按服务器条目的 `os_type` 分发休眠 / 关机命令：Linux（默认）执行 `systemctl suspend --ignore-inhibitors`（忽略应用持有的休眠抑制锁，保证用户明确指令必然生效）与 `systemctl poweroff`；Windows 执行 `rundll32.exe powrprof.dll,SetSuspendState 0,1,0` 与 `shutdown /s /t 0`。
+- 远程命令经 `sshpass + ssh` 执行，固定使用 `-o StrictHostKeyChecking=no`、`-o UserKnownHostsFile=/dev/null` 且连接超时 5 秒；唤醒调用 `etherwake -i <接口> <mac>` 在局域网二层发送魔术包（接口取 `defaults.wol_interface`，缺省或置空均为 `eth0`——uci 的空值即删除选项，"显式空串"与"缺省"不可区分），按服务器条目的 `os_type` 分发休眠 / 关机命令：Linux（默认）执行 `systemctl suspend --ignore-inhibitors`（忽略应用持有的休眠抑制锁，保证用户明确指令必然生效）与 `systemctl poweroff`；Windows 执行 `rundll32.exe powrprof.dll,SetSuspendState 0,1,0` 与 `shutdown /s /t 0`。
 
 ## Windows 目标机设置
 

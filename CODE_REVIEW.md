@@ -124,7 +124,7 @@ o.modalonly = true;   // 仅模态框内编辑，不进网格列
 ### 🔵 B-正面观察
 
 - `get_cursor()` 支持 `SERVERCTL_CONFDIR/DELTADIR` 环境变量注入（19-27），使测试可用独立配置目录跑真实 uci，是很好的可测试性设计。
-- `wake` 对 `wol_interface`「缺省=eth0 / 显式置空=不带 -i」的三态语义（95-107）注释与实现一致。
+- `wake` 对 `wol_interface` 的语义（缺省=eth0 / 显式置空=不带 -i）注释与实现一致。→（Rev.5 修正）libuci 的 `uci_set('')` 即 `uci_delete`，配置里的空串选项在解析时就被删除，"显式置空"状态实际不可达；已改为两态（缺省或空串=eth0 / 非空=-i 接口），代码、测试、README 已同步。
 - 各 action 返回统一的 `{code, output}`，`execute()` 对未知动作/未知服务器先行短路（130-141），错误信息可读。
 - user 缺省 root、password 缺省空（44-48）与前端默认值呼应。
 

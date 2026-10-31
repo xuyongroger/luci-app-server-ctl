@@ -102,18 +102,20 @@ const actions = {
 			return { code: 1, output: 'serverctl: mac address missing\n' };
 
 		/* WOL via etherwake (Layer-2 magic packet, no perl). wol_interface selects
-		 * the interface the magic packet is sent out of: option absent -> 'eth0';
-		 * option set to an empty string -> fall back to bare etherwake (no -i). */
+		 * the interface the magic packet is sent out of; missing/empty -> 'eth0'.
+		 * Note: libuci treats an empty value as a deleted option (uci_set('')
+		 * calls uci_delete), so "explicitly empty" is indistinguishable from
+		 * "absent" and both fall back to 'eth0'. */
 		const ctx = get_cursor();
 		ctx.load('serverctl');
 
 		let raw = ctx.get('serverctl', 'defaults', 'wol_interface');
-		let iface = (raw == null) ? 'eth0' : str(raw);
-		let argv = (iface != '') ? [ 'etherwake', '-i', iface ] : [ 'etherwake' ];
+		let iface = str(raw);
 
-		push(argv, str(s['mac']));
+		if (iface == '')
+			iface = 'eth0';
 
-		return run(argv);
+		return run(['etherwake', '-i', iface, str(s['mac'])]);
 	},
 
 	suspend: function(s) {

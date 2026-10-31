@@ -253,7 +253,7 @@ print(\"code=\", r.code);
 grep -Fq "sshpass -p p'w x ssh -o StrictHostKeyChecking=no" $LOG \
 	&& ok "含引号密码被正确 shell 转义并完整传参" || bad "shell 转义: $(cat $T/rpc1.out $T/rpc1.err) log=$(cat $LOG)"
 
-# ---------- wol_interface 三态语义（缺省 eth0 已在首轮 tick 覆盖）----------
+# ---------- wol_interface 语义（缺省 eth0 已在首轮 tick 覆盖）----------
 # 走 RPC 直调 wake，不受任务所在分钟窗口影响
 uci -c $T/etc/config -t $T/delta set serverctl.defaults.wol_interface=br-lan >/dev/null 2>&1
 uci -c $T/etc/config -t $T/delta commit serverctl >/dev/null 2>&1
@@ -262,12 +262,12 @@ ucode -e "import svc from \"$T/rpc-svc.uc\"; svc.serverctl.wake.call({ args: { s
 grep -q "^etherwake -i br-lan AA:BB:CC:DD:EE:01$" $LOG \
 	&& ok "wol_interface 自定义接口生效" || bad "wol_interface 自定义接口: [$(cat $LOG)]"
 
-# uci CLI 置空实为删除选项，故直接改写配置文件写入空字符串，验证“显式空串不带 -i”分支
+# libuci 语义：uci_set 空值等于删除选项（解析 option x '' 亦同），故“显式空串”与“缺省”不可区分，统一回落 eth0
 sed -i "s/option wol_interface 'br-lan'/option wol_interface ''/" $T/etc/config/serverctl
 : > $LOG
 ucode -e "import svc from \"$T/rpc-svc.uc\"; svc.serverctl.wake.call({ args: { server: \"NAS\" } });" >/dev/null 2>&1
-grep -q "^etherwake AA:BB:CC:DD:EE:01$" $LOG \
-	&& ok "wol_interface 显式空串不带 -i" || bad "wol_interface 空串: [$(cat $LOG)]"
+grep -q "^etherwake -i eth0 AA:BB:CC:DD:EE:01$" $LOG \
+	&& ok "wol_interface 显式空串等同缺省(uci 空值即删选项)" || bad "wol_interface 空串: [$(cat $LOG)]"
 sed -i "/option wol_interface/d" $T/etc/config/serverctl
 
 # ---------- rpcd 模块接口（测试用：去 shebang 并改 return 为 export default）----------
