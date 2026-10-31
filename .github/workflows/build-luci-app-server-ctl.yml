@@ -112,19 +112,39 @@ jobs:
 
       - name: Run repo self-tests
         # 编译 SDK 前先跑仓库自带测试（tests/run-tests.sh：静态检查 + ucode/uci 行为测试）。
-        # runner 自带 node；uci 由 Ubuntu 官方源安装；ucode 无 Ubuntu 包，尝试一次快速
-        # 源码构建（约 1 分钟）。装不上则脚本内断言失败，但整步不阻断 .ipk 产出
+        # runner 自带 node；uci/ucode 在 Ubuntu 官方源中均不存在（都是 OpenWrt 组件），
+        # 且被测 core.uc 用到 ucode 的 uci 模块，故按依赖链从上游源码快速构建(约 2 分钟)：
+        #   uci(uci CLI + libuci) -> libubox(ucode 的 uci 模块链接需要) -> ucode
+        # ucode 的 cmake 检测到 libuci+libubox 后启用 UCI_SUPPORT；其模块搜索路径是
+        # 编译期写死的 ${CMAKE_INSTALL_PREFIX}/lib/ucode，故三者统一 cmake --install
+        # 到 /usr/local（模块 .so 落 /usr/local/lib/ucode），随后 ldconfig 刷新。
+        # 装不上则脚本内断言失败，但整步不阻断 .ipk 产出
         # （continue-on-error，问题在步骤上以红色标示可查）。脚本会向 /usr/share、
         # /usr/local/bin 部署被测文件，故以 root 运行并透传 PATH 以便找到 node/ucode。
         continue-on-error: true
         shell: bash
         run: |
-          sudo -E apt-get -qq install -y --no-install-recommends uci
-          command -v ucode >/dev/null || {
-            git clone --depth 1 https://github.com/xdarklight/ucode /tmp/ucode-src
-            make -C /tmp/ucode-src -j"$(nproc)" \
-              && sudo install -m 0755 /tmp/ucode-src/ucode /usr/local/bin/ucode
+          command -v uci >/dev/null || {
+            git clone --depth 1 https://github.com/openwrt/uci.git /tmp/uci-src
+            cmake -S /tmp/uci-src -B /tmp/uci-build -DCMAKE_BUILD_TYPE=Release
+            cmake --build /tmp/uci-build -j"$(nproc)"
+            sudo cmake --install /tmp/uci-build
           }
+          [ -f /usr/local/lib/libubox.so ] || {
+            git clone --depth 1 https://github.com/openwrt/libubox.git /tmp/libubox-src
+            cmake -S /tmp/libubox-src -B /tmp/libubox-build -DCMAKE_BUILD_TYPE=Release
+            cmake --build /tmp/libubox-build -j"$(nproc)"
+            sudo cmake --install /tmp/libubox-build
+          }
+          sudo ldconfig
+          command -v ucode >/dev/null || {
+            git clone --depth 1 https://github.com/ucode-lang/ucode.git /tmp/ucode-src
+            cmake -S /tmp/ucode-src -B /tmp/ucode-build \
+              -DCMAKE_BUILD_TYPE=Release -DFS_SUPPORT=ON -DUCI_SUPPORT=ON
+            cmake --build /tmp/ucode-build -j"$(nproc)"
+            sudo cmake --install /tmp/ucode-build
+          }
+          ucode -e 'import { cursor } from "uci";' && echo "ucode uci 模块可用"
           sudo env PATH="$PATH" bash tests/run-tests.sh
 
       - name: Resolve build version
