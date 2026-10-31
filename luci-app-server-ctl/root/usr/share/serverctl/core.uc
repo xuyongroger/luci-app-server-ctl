@@ -49,8 +49,11 @@ function ssh_argv(server, cmd) {
 
 	let host = str(server['ip']);
 
-	/* IPv6 地址须以方括号包裹方能被 ssh 正确解析 */
-	if (index(host, ':') != null)
+	/* IPv6 地址须以方括号包裹方能被 ssh 正确解析。
+	 * index() 未命中时旧版 ucode 返回 null、新版(2025-07 后)返回 -1，两种语义都兼容 */
+	const colon = index(host, ':');
+
+	if (colon != null && colon >= 0)
 		host = '[' + host + ']';
 
 	return ['sshpass', '-p', str(pass), 'ssh',
