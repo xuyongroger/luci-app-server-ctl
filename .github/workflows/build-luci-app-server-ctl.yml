@@ -145,6 +145,9 @@ jobs:
               -DCMAKE_BUILD_TYPE=Release -DFS_SUPPORT=ON -DUCI_SUPPORT=ON
             cmake --build /tmp/ucode-build -j"$(nproc)"
             sudo cmake --install /tmp/ucode-build
+            # ucode 装完后必须再刷一次 ld 缓存，否则 run-tests 里调 ucode 会报
+            # libucode.so.0 cannot open shared object file
+            sudo ldconfig
           }
           ucode -e 'import { cursor } from "uci";' && echo "ucode uci 模块可用"
           sudo env PATH="$PATH" bash tests/run-tests.sh
