@@ -30,12 +30,12 @@
 ## 依赖
 
 ```
-+luci-base +etherwake +sshpass +openssh-client
++luci-base +rpcd-mod-ucode +etherwake +sshpass +openssh-client
 ```
 
 - `etherwake`：以二层以太网帧发送 WOL 魔术包（唤醒）。相比 `wakeonlan`（perl 脚本，会拉入整套 perl），`etherwake` 仅依赖 `libc`，更轻量；代价是只在**同一二层广播域**内有效，需指定发送网口（见下 `wol_interface`）
 - `sshpass` + `openssh-client`：非交互式 SSH 登录以执行挂起 / 关机
-- `luci-base`：LuCI 前端基础库；本应用以 **ucode 插件**形式挂入 rpcd，运行时需要 `rpcd-mod-ucode`（通常已随 `luci-base` 的依赖链引入）
+- `luci-base`：LuCI 前端基础库；本应用以 **ucode 插件**形式挂入 rpcd，运行时需要 `rpcd-mod-ucode`（已在包依赖中显式声明，不依赖传递引入）
 
 ## 配置说明（UCI: /etc/config/serverctl）
 
@@ -72,13 +72,13 @@ config serverctl 'defaults'
 | `hour` / `minute` | 执行时刻 | 0–23 / 0–59 |
 | `enabled` | 是否启用 | 开关 |
 
-> 说明：SSH 密码以明文存于 UCI 配置，且 ssh 使用 `StrictHostKeyChecking=no`（不校验远端主机密钥），请把该设备与管理员访问控制在可信的局域网范围内。
+> 说明：SSH 密码以明文存于 UCI 配置（文件权限仅 root 可读），且 ssh 使用 `StrictHostKeyChecking=no`（不校验远端主机密钥），请把该设备与管理员访问控制在可信的局域网范围内。另请注意：`sshpass` 非交互登录时密码经由命令行参数传递，调用期间本机其他进程理论上可从进程表读到（OpenWrt 默认仅 root 单一可登录/运行进程的账户，实际风险有限）；如需更强隔离，后续可规划改用密钥认证（为服务器条目增加可选私钥字段）。
 
 ## 工作原理
 
 - `rpcd` ucode 后端（`/usr/share/rpcd/ucode/serverctl`）提供 `ping`、`sshtest`（读）与 `wake`、`suspend`、`poweroff`（写）方法，权限由 `/usr/share/rpcd/acl.d` 限定。
 - `procd` 服务 `/etc/init.d/serverctl`（`START=95`）常驻运行调度器 `/usr/bin/serverctl-scheduler`，每 3 秒检查一次；每当进入新的分钟时评估到期任务。
-- 调度使用系统时区（读取 `/etc/TZ`），`defaults.enabled=0` 时调度器跳过所有任务。
+- 调度使用系统时区（服务启动时读取 `/etc/TZ`），`defaults.enabled=0` 时调度器跳过所有任务。**变更系统时区后需 `/etc/init.d/serverctl restart`**，否则已运行的调度器仍按旧时区触发定时任务。
 - 远程命令经 `sshpass + ssh` 执行，固定使用 `-o StrictHostKeyChecking=no`、`-o UserKnownHostsFile=/dev/null` 且连接超时 5 秒；唤醒调用 `etherwake -i <接口> <mac>` 在局域网二层发送魔术包（接口取 `defaults.wol_interface`，缺省 `eth0`；显式置空则退化为不带 `-i` 的 `etherwake <mac>`），按服务器条目的 `os_type` 分发休眠 / 关机命令：Linux（默认）执行 `systemctl suspend --ignore-inhibitors`（忽略应用持有的休眠抑制锁，保证用户明确指令必然生效）与 `systemctl poweroff`；Windows 执行 `rundll32.exe powrprof.dll,SetSuspendState 0,1,0` 与 `shutdown /s /t 0`。
 
 ## Windows 目标机设置
@@ -105,6 +105,16 @@ config serverctl 'defaults'
 scp luci-app-server-ctl_*.ipk root@<路由器IP>:/tmp/
 ssh root@<路由器IP> "opkg update && opkg install /tmp/luci-app-server-ctl_*.ipk"
 ```
+
+**服务启用说明**：包内自带的 `/etc/init.d/serverctl` 在安装时会被 OpenWrt 打包框架的默认 postinst 钩子（base-files `/lib/functions.sh` 的 `default_postinst`）自动 `enable` 并立即 `start`（升级时仅在原本已启用的情况下重启），预编译进固件的场景则在构建时即创建 rc.d 自启链接，**无需手动启用**。可用以下命令确认：
+
+```sh
+/etc/init.d/serverctl enabled && echo enabled   # 开机自启状态
+pgrep -f serverctl-scheduler                    # 调度器进程是否在运行
+logread -e serverctl                            # 调度器输出日志
+```
+
+若因环境异常未处于运行状态，手动补救：`/etc/init.d/serverctl enable && /etc/init.d/serverctl start`。
 
 ### 方式二：源码编译
 
