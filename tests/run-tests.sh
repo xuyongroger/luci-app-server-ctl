@@ -2,9 +2,10 @@
 # 端到端测试：调度器逻辑 + rpcd 模块 + 静态检查
 # 依赖: ucode(自制运行时), uci CLI, fake etherwake/sshpass/ping
 
-ROOT=/workspace/luci-plugin/luci-app-server-ctl/root
-PKG=/workspace/luci-plugin/luci-app-server-ctl
-T=/tmp/sc-test
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+ROOT=$SCRIPT_DIR/../luci-app-server-ctl/root
+PKG=$SCRIPT_DIR/../luci-app-server-ctl
+T=${SC_TEST_DIR:-/tmp/sc-test}
 LOG=$T/calls.log
 PASS=0
 FAIL=0
@@ -18,6 +19,13 @@ check() { # desc, cond-result(0/1)
 
 rm -rf $T
 mkdir -p $T/bin $T/etc/config $T/delta $T/ucode-tmp
+
+# 退出（无论成败/中断）时清理部署产物与测试工作区
+cleanup() {
+	rm -rf "$T" /usr/local/bin/serverctl-scheduler /usr/share/serverctl/core.uc
+	rmdir /usr/share/serverctl 2>/dev/null
+}
+trap cleanup EXIT INT TERM
 
 export TZ=UTC
 export SERVERCTL_CONFDIR=$T/etc/config
@@ -34,9 +42,12 @@ cat > $T/bin/sshpass <<EOF
 echo "sshpass \$*" >> $LOG
 echo FAKE-SSH-OUTPUT
 EOF
+# fake ping 故意 exit 3：验证非零退出码经 ucode popen 正确传递（见 t_weekly_right 断言）
 cat > $T/bin/ping <<EOF
 #!/bin/sh
 echo "ping \$*" >> $LOG
+echo PING-OUT-CODE3
+exit 3
 EOF
 chmod +x $T/bin/*
 export PATH=$T/bin:$PATH
@@ -186,6 +197,7 @@ done
 echo "$OUT" | grep -q "t_daily_match NAS wake"            && ok "daily 匹配任务执行"        || bad "daily 匹配任务执行"
 echo "$OUT" | grep -q "t_daily_match.*code=0"            && ok "wake 成功 code=0"          || bad "wake 成功 code=0"
 echo "$OUT" | grep -q "t_weekly_right DB ping"           && ok "weekly 星期匹配执行"       || bad "weekly 星期匹配执行"
+echo "$OUT" | grep -q "t_weekly_right DB ping.*code=3"   && ok "非零退出码经 popen 正确传递(code=3)" || bad "非零退出码传递: [$(echo "$OUT" | grep t_weekly_right)]"
 echo "$OUT" | grep -q "t_once_today DB poweroff"         && ok "once 当日任务执行"         || bad "once 当日任务执行"
 echo "$OUT" | grep -q "t_win_suspend WIN suspend"        && ok "Windows 休眠任务执行"      || bad "Windows 休眠任务执行"
 echo "$OUT" | grep -q "t_win_off WIN poweroff"           && ok "Windows 关机任务执行"      || bad "Windows 关机任务执行"
@@ -233,13 +245,30 @@ sed '1{/^#!/d}; s/^return {/export default {/' $ROOT/usr/share/rpcd/ucode/server
 uci -c $T/etc/config -t $T/delta set "serverctl.nas.password=p'w x" >/dev/null 2>&1
 uci -c $T/etc/config -t $T/delta commit serverctl >/dev/null 2>&1
 : > $LOG
-ucode -e '
-import svc from "/tmp/sc-test/rpc-svc.uc";
-let r = svc.serverctl.suspend.call({ args: { server: "NAS" } });
-print("code=", r.code);
-' > $T/rpc1.out 2>$T/rpc1.err
+ucode -e "
+import svc from \"$T/rpc-svc.uc\";
+let r = svc.serverctl.suspend.call({ args: { server: \"NAS\" } });
+print(\"code=\", r.code);
+" > $T/rpc1.out 2>$T/rpc1.err
 grep -Fq "sshpass -p p'w x ssh -o StrictHostKeyChecking=no" $LOG \
 	&& ok "含引号密码被正确 shell 转义并完整传参" || bad "shell 转义: $(cat $T/rpc1.out $T/rpc1.err) log=$(cat $LOG)"
+
+# ---------- wol_interface 三态语义（缺省 eth0 已在首轮 tick 覆盖）----------
+# 走 RPC 直调 wake，不受任务所在分钟窗口影响
+uci -c $T/etc/config -t $T/delta set serverctl.defaults.wol_interface=br-lan >/dev/null 2>&1
+uci -c $T/etc/config -t $T/delta commit serverctl >/dev/null 2>&1
+: > $LOG
+ucode -e "import svc from \"$T/rpc-svc.uc\"; svc.serverctl.wake.call({ args: { server: \"NAS\" } });" >/dev/null 2>&1
+grep -q "^etherwake -i br-lan AA:BB:CC:DD:EE:01$" $LOG \
+	&& ok "wol_interface 自定义接口生效" || bad "wol_interface 自定义接口: [$(cat $LOG)]"
+
+# uci CLI 置空实为删除选项，故直接改写配置文件写入空字符串，验证“显式空串不带 -i”分支
+sed -i "s/option wol_interface 'br-lan'/option wol_interface ''/" $T/etc/config/serverctl
+: > $LOG
+ucode -e "import svc from \"$T/rpc-svc.uc\"; svc.serverctl.wake.call({ args: { server: \"NAS\" } });" >/dev/null 2>&1
+grep -q "^etherwake AA:BB:CC:DD:EE:01$" $LOG \
+	&& ok "wol_interface 显式空串不带 -i" || bad "wol_interface 空串: [$(cat $LOG)]"
+sed -i "/option wol_interface/d" $T/etc/config/serverctl
 
 # ---------- rpcd 模块接口（测试用：去 shebang 并改 return 为 export default）----------
 sed '1{/^#!/d}; s/^return {/export default {/' $ROOT/usr/share/rpcd/ucode/serverctl > $T/rpc-svc.uc

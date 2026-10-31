@@ -43,6 +43,13 @@ const MIME = {
 	'.woff2': 'font/woff2'
 };
 
+/* 路径遍历守卫：静态文件的解析结果必须仍位于对应根目录内 */
+function inside(rootDir, file) {
+	const rel = path.relative(path.resolve(rootDir), path.resolve(file));
+
+	return rel !== '' && !rel.startsWith('..' + path.sep) && rel !== '..' && !path.isAbsolute(rel);
+}
+
 function serveStatic(req, res) {
 	let p = decodeURIComponent(req.url.split('?')[0]);
 
@@ -50,15 +57,19 @@ function serveStatic(req, res) {
 		p = '/index.html';
 
 	let file = null;
+	let base = null;
 
 	if (p === '/luci-static/resources/view/serverctl/main.js')
 		file = PLUGIN_MAIN;
 	else if (p.startsWith('/luci-static/resources/'))
-		file = path.join(RES, p.slice('/luci-static/resources'.length));
+		[file, base] = [path.join(RES, p.slice('/luci-static/resources'.length)), RES];
 	else if (p.startsWith('/luci-static/'))
-		file = path.join(THEME, p.slice('/luci-static'.length));
+		[file, base] = [path.join(THEME, p.slice('/luci-static'.length)), THEME];
 	else if (p === '/index.html')
 		file = path.join(ROOT, 'index.html');
+
+	if (file != null && base != null && !inside(base, file))
+		file = null;
 
 	if (p === '/cgi-bin/cgi-exec' || p.startsWith('/cgi-bin/luci/admin/uci/')) {
 		res.writeHead(200, { 'Content-Type': MIME['.json'] });
