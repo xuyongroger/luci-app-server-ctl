@@ -114,7 +114,8 @@ jobs:
         # 编译 SDK 前先跑仓库自带测试（tests/run-tests.sh：静态检查 + ucode/uci 行为测试）。
         # runner 自带 node；uci/ucode 在 Ubuntu 官方源中均不存在（都是 OpenWrt 组件），
         # 且被测 core.uc 用到 ucode 的 uci 模块，故按依赖链从上游源码快速构建(约 2 分钟)：
-        #   uci(uci CLI + libuci) -> libubox(ucode 的 uci 模块链接需要) -> ucode
+        #   libubox -> uci(uci CLI + libuci) -> ucode
+        # （uci 关闭 Lua 绑定 BUILD_LUA=OFF；ucode 的 uci 模块链接需要 libubox+libuci）
         # ucode 的 cmake 检测到 libuci+libubox 后启用 UCI_SUPPORT；其模块搜索路径是
         # 编译期写死的 ${CMAKE_INSTALL_PREFIX}/lib/ucode，故三者统一 cmake --install
         # 到 /usr/local（模块 .so 落 /usr/local/lib/ucode），随后 ldconfig 刷新。
@@ -124,17 +125,18 @@ jobs:
         continue-on-error: true
         shell: bash
         run: |
-          command -v uci >/dev/null || {
-            git clone --depth 1 https://github.com/openwrt/uci.git /tmp/uci-src
-            cmake -S /tmp/uci-src -B /tmp/uci-build -DCMAKE_BUILD_TYPE=Release
-            cmake --build /tmp/uci-build -j"$(nproc)"
-            sudo cmake --install /tmp/uci-build
-          }
           [ -f /usr/local/lib/libubox.so ] || {
             git clone --depth 1 https://github.com/openwrt/libubox.git /tmp/libubox-src
             cmake -S /tmp/libubox-src -B /tmp/libubox-build -DCMAKE_BUILD_TYPE=Release
             cmake --build /tmp/libubox-build -j"$(nproc)"
             sudo cmake --install /tmp/libubox-build
+          }
+          command -v uci >/dev/null || {
+            git clone --depth 1 https://github.com/openwrt/uci.git /tmp/uci-src
+            # BUILD_LUA=OFF：Lua 绑定在 Ubuntu 上找不到 lua5.1 且测试用不到
+            cmake -S /tmp/uci-src -B /tmp/uci-build -DCMAKE_BUILD_TYPE=Release -DBUILD_LUA=OFF
+            cmake --build /tmp/uci-build -j"$(nproc)"
+            sudo cmake --install /tmp/uci-build
           }
           sudo ldconfig
           command -v ucode >/dev/null || {
