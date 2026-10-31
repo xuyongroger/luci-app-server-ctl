@@ -659,7 +659,6 @@ return view.extend({
 		o.rmempty = false;
 		o.value('linux', 'Linux');
 		o.value('windows', 'Windows');
-		o.description = _('Linux runs systemctl over SSH; Windows runs rundll32/shutdown commands over SSH.');
 
 		return m.render();
 	}
