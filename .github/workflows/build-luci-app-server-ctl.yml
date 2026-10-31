@@ -127,7 +127,7 @@ jobs:
         run: |
           [ -f /usr/local/lib/libubox.so ] || {
             git clone --depth 1 https://github.com/openwrt/libubox.git /tmp/libubox-src
-            cmake -S /tmp/libubox-src -B /tmp/libubox-build -DCMAKE_BUILD_TYPE=Release
+            cmake -S /tmp/libubox-src -B /tmp/libubox-build -DCMAKE_BUILD_TYPE=Release -DBUILD_LUA=OFF
             cmake --build /tmp/libubox-build -j"$(nproc)"
             sudo cmake --install /tmp/libubox-build
           }
