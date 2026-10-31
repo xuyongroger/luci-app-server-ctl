@@ -47,11 +47,17 @@ function ssh_argv(server, cmd) {
 	if (pass == null)
 		pass = '';
 
+	let host = str(server['ip']);
+
+	/* IPv6 地址须以方括号包裹方能被 ssh 正确解析 */
+	if (index(host, ':') != null)
+		host = '[' + host + ']';
+
 	return ['sshpass', '-p', str(pass), 'ssh',
 		'-o', 'StrictHostKeyChecking=no',
 		'-o', 'UserKnownHostsFile=/dev/null',
 		'-o', 'ConnectTimeout=' + SSH_TIMEOUT,
-		sprintf('%s@%s', str(user), str(server['ip'])),
+		sprintf('%s@%s', str(user), host),
 		cmd];
 }
 
@@ -72,7 +78,7 @@ function find_server(name) {
 		if (s['.type'] != 'server')
 			continue;
 
-		if (str(s['name']) == str(name) || sid == name)
+		if (str(name) != '' && (str(s['name']) == str(name) || sid == name))
 			return s;
 	}
 
@@ -128,11 +134,16 @@ const actions = {
 };
 
 function execute(action, name) {
-	const s = find_server(name);
 	const impl = actions[action];
 
 	if (impl == null)
 		return { code: 1, output: sprintf('serverctl: unknown action %s\n', str(action)) };
+
+	/* 空名会字符串匹配到缺失 name 字段的条目，须先行拒绝 */
+	if (str(name) == '')
+		return { code: 1, output: 'serverctl: server name must not be empty\n' };
+
+	const s = find_server(name);
 
 	if (s == null)
 		return { code: 1, output: sprintf('serverctl: server not found: %s\n', str(name)) };
