@@ -40,6 +40,9 @@ msgstr "MAC 地址"
 msgid "Username"
 msgstr "用户名"
 
+msgid "SSH Port"
+msgstr "SSH 端口"
+
 msgid "System Type"
 msgstr "系统类型"
 

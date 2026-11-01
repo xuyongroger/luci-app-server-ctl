@@ -103,6 +103,7 @@ config server 'win'
 	option user 'admin'
 	option password 'pw3'
 	option os_type 'windows'
+	option ssh_port '1000'
 
 config task 't_daily_match'
 	option schedule 'daily'
@@ -210,13 +211,14 @@ echo "$OUT" | grep -q "t_once_future"                    && bad "once 非当日�
 [ $(echo "$OUT" | grep -c .) -eq 7 ] && ok "恰好执行 7 个匹配任务(含 2 个预期失败)" || bad "恰好执行 7 个匹配任务: [$(echo "$OUT" | grep -c .)]"
 
 grep -q "^etherwake -i eth0 AA:BB:CC:DD:EE:01$" $LOG && ok "etherwake 以配置接口+MAC 调用" || bad "etherwake 调用参数: $(cat $LOG)"
-# DB 未设 os_type，应按 Linux 默认走 systemctl
+# DB 未设 os_type，应按 Linux 默认走 systemctl；未设 ssh_port，命令行不应出现 -p（除 sshpass 自身的 -p 密码外）
 grep -q "systemctl poweroff" $LOG                       && ok "poweroff 经 ssh 执行" || bad "poweroff 经 ssh 执行"
 grep -Fq "sshpass -p pw2 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 dbuser@192.0.2.11 systemctl poweroff" $LOG \
 	&& ok "ssh 命令行完整(用户/选项/命令正确)" || bad "ssh 命令行完整: $(grep poweroff $LOG)"
-grep -Fq "sshpass -p pw3 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 admin@192.0.2.12 rundll32.exe powrprof.dll,SetSuspendState 0,1,0" $LOG \
-	&& ok "Windows 休眠命令正确(rundll32)" || bad "Windows 休眠命令: $(grep 192.0.2.12 $LOG)"
-grep -Fq "sshpass -p pw3 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 admin@192.0.2.12 shutdown /s /t 0" $LOG \
+# WIN 设了非标准端口 ssh_port=1000，应附加 ssh -p 1000
+grep -Fq "sshpass -p pw3 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -p 1000 admin@192.0.2.12 rundll32.exe powrprof.dll,SetSuspendState 0,1,0" $LOG \
+	&& ok "Windows 休眠命令正确(rundll32+非标准端口)" || bad "Windows 休眠命令: $(grep 192.0.2.12 $LOG)"
+grep -Fq "sshpass -p pw3 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -p 1000 admin@192.0.2.12 shutdown /s /t 0" $LOG \
 	&& ok "Windows 关机命令正确(shutdown)" || bad "Windows 关机命令: $(grep 192.0.2.12 $LOG)"
 grep -q "^ping -c 3 -W 2 192.0.2.11$" $LOG             && ok "ping 参数正确" || bad "ping 参数正确"
 

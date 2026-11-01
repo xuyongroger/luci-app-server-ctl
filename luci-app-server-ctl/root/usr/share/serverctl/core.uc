@@ -40,6 +40,7 @@ function run(argv) {
 function ssh_argv(server, cmd) {
 	let user = server['user'];
 	let pass = server['password'];
+	let port = str(server['ssh_port']);
 
 	if (str(user) == '')
 		user = 'root';
@@ -56,12 +57,20 @@ function ssh_argv(server, cmd) {
 	if (colon != null && colon >= 0)
 		host = '[' + host + ']';
 
-	return ['sshpass', '-p', str(pass), 'ssh',
+	let argv = ['sshpass', '-p', str(pass), 'ssh',
 		'-o', 'StrictHostKeyChecking=no',
 		'-o', 'UserKnownHostsFile=/dev/null',
-		'-o', 'ConnectTimeout=' + SSH_TIMEOUT,
-		sprintf('%s@%s', str(user), host),
-		cmd];
+		'-o', 'ConnectTimeout=' + SSH_TIMEOUT];
+
+	/* 非标准 SSH 端口：条目设置了 ssh_port 才附加 -p，缺省/置空沿用 ssh 默认(22)，
+	 * 保证未配置端口的旧条目命令行一字不变 */
+	if (port != '')
+		push(argv, '-p', port);
+
+	push(argv, sprintf('%s@%s', str(user), host));
+	push(argv, cmd);
+
+	return argv;
 }
 
 function is_windows(s) {

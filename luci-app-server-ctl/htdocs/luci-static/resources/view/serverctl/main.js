@@ -309,6 +309,7 @@ const ManualSection = form.NamedSection.extend({
 			mkrow('ip', _('IP Address')),
 			mkrow('mac', _('MAC Address')),
 			mkrow('user', _('Username')),
+			mkrow('port', _('SSH Port')),
 			mkrow('os', _('System Type'))
 		];
 
@@ -370,6 +371,7 @@ const ManualSection = form.NamedSection.extend({
 		els.ip.textContent = s ? (s['ip'] || '—') : '—';
 		els.mac.textContent = s ? (s['mac'] || '—') : '—';
 		els.user.textContent = s ? (s['user'] || 'root') : '—';
+		els.port.textContent = s ? (s['ssh_port'] || '22') : '—';
 		els.os.textContent = s ? (s['os_type'] == 'windows' ? 'Windows' : 'Linux') : '—';
 
 		if (s && s['password'])
@@ -653,6 +655,10 @@ return view.extend({
 
 		o = s.option(form.Value, 'password', _('Password'));
 		o.modalonly = true;
+
+		o = s.option(form.Value, 'ssh_port', _('SSH Port'));
+		o.default = '22';
+		o.datatype = 'port';
 
 		o = s.option(form.ListValue, 'os_type', _('System Type'));
 		o.default = 'linux';
