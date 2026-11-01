@@ -160,7 +160,6 @@ make package/luci-app-server-ctl/compile V=s
 ./tests/run-tests.sh
 ```
 
-- `preview/index.html`：静态预览入口
 - `tests/harness/`：mock rpcd/uci 后端 + 最小 LuCI 前端资源
 
 ## 目录结构
