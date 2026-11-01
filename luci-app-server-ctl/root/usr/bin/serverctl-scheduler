@@ -8,18 +8,25 @@ import core from '/usr/share/serverctl/core.uc';
 function readnow() {
 	/* 用 ucode 内置 localtime() 进程内计算，不再每 3 秒 fork 一个 date；
 	 * localtime 跟随 TZ 环境变量（procd start_service 注入 /etc/TZ）。
-	 * 注意 TimeSpec：mon 为 1 基；wday 为 0 基（周日=0，与 date +%w 及前端
-	 * weekday 取值一致；tick() 侧另有 7→0 兼容旧数据）。 */
+	 * 注意 TimeSpec：mon 为 1 基；wday 存在版本差异——旧版返回 0–6（周日=0，
+	 * struct tm 风格），新版(2025-07 后)返回 1–7（周日=7，date +%u 风格），
+	 * 此处统一归一为 0–6（周日=0），与 date +%w 及前端 weekday 取值一致；
+	 * tick() 侧另有对任务配置值 7→0 的兼容。 */
 	const t = localtime();
 
 	if (t == null)
 		return null;
 
+	let wd = t['wday'];
+
+	if (wd == 7)
+		wd = 0;
+
 	return {
 		date: sprintf('%04d-%02d-%02d', t['year'], t['mon'], t['mday']),
 		hour: t['hour'],
 		minute: t['min'],
-		weekday: t['wday'],
+		weekday: wd,
 	};
 }
 
