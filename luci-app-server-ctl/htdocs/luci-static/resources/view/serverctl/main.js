@@ -227,6 +227,21 @@ const CTL_CSS = `
 	font-family: monospace;
 }
 
+/* cascade.css 在 ≤800px 时全局 th{display:none} + td{display:block}（为 cbi 卡片式
+ * 表格让路），会把信息表标签整体隐藏、只剩一列值。这里让信息表在小屏保持两列表格，
+ * 并让值列占满剩余宽度、允许长值(MAC/IP)换行。 */
+@media only screen and (max-width: 800px) {
+	.ctl-manual .ctl-info th,
+	.ctl-manual .ctl-info td {
+		display: table-cell;
+	}
+
+	.ctl-manual .ctl-info td {
+		width: auto;
+		word-break: break-all;
+	}
+}
+
 .ctl-manual .ctl-pass-toggle {
 	margin-left: 0.75em;
 }
