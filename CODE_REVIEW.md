@@ -4,6 +4,7 @@
 - Rev.2（同日）：根据反馈对「服务启用链路」做了专项复核（新增 E4），并在 README 安装章节补充验证/补救命令
 - Rev.3（同日）：修复全部中危问题（A1、A2、D1、E1、F1 代码修复；B2 按报告建议以 README 说明处理）
 - Rev.4（同日）：修复全部低危问题（A3–A7、B3、D2–D5、E2、F2–F4、G1–G3、H1/H2）；B4、C3、D3、E3 按报告结论维持现状仅记录
+- Rev.6（2026-11-01）：`preview/index.html` 已从仓库删除（提交 9785898，功能由 `tests/harness` mock 环境承接）；正文中的 preview 引文保留为历史原文，相关处已加删除标注
 - 审查范围：仓库全部一手代码（前端视图、ucode 后端、调度器、服务脚本、打包配置、ACL/菜单、i18n、CI 工作流、测试体系、仓库文档）。`tests/harness/resources/` 下的 form.js / ui.js / luci.js / network.js 等 vendored LuCI 库副本仅作为运行环境看待，不作为被审代码。
 - 严重度图例：🔴 高（应尽快修）｜🟠 中（建议尽快处理）｜🟡 低（择机改进）｜🔵 说明/正面观察
 
@@ -17,7 +18,7 @@
 | D. 调度器与服务 | `serverctl-scheduler`、`init.d` | 逻辑正确、容错好，但缺运行日志 | 🟠×1（已修复） 🟡×4 🔵×3 |
 | E. 打包/菜单/翻译 | `Makefile`、`menu.d`、`po` | 规范，有一处依赖声明风险；服务启用链路已复核（E4） | 🟠×1（已修复） 🟡×2 🔵×3 |
 | F. CI 工作流 | `build-luci-app-server-ctl.yml` | 诊断完善，个别时效性/最小权限问题 | 🟠×1（已修复） 🟡×3 🔵×2 |
-| G. 测试体系 | `tests/`、`preview/` | 覆盖面相当好，路径硬编码 | 🟡×3 🔵×3 |
+| G. 测试体系 | `tests/`、`preview/`（Rev.6 已删） | 覆盖面相当好，路径硬编码 | 🟡×3 🔵×3 |
 | H. 仓库卫生/文档 | README、AGENTS、issues | README 质量高；疑似放错目录的文件 | 🟡×2 🔵×1 |
 
 总体结论：**没有发现高危漏洞**。命令注入防护（shell 单引号转义）做得扎实且有测试佐证，ACL 读写分离正确，调度矩阵语义与 README 一致。主要改进点集中在：前端两处 HTML 注入面、服务器列表网格明文暴露密码、调度器守护模式零日志、`rpcd-mod-ucode` 依赖未显式声明、以及 CI runner 时效。以上全部中危项已于 Rev.3 修复完毕（状态见各节“状态”行与文末优先级表）。
@@ -267,7 +268,7 @@ LUCI_DEPENDS:=+luci-base +rpcd-mod-ucode +etherwake +sshpass +openssh-client
 
 ---
 
-## G. 测试体系 `tests/`、`preview/`
+## G. 测试体系 `tests/`、`preview/`（`preview/` 已于 Rev.6 移除）
 
 ### 🟡 G1 `run-tests.sh` 路径硬编码，可移植性差
 
@@ -298,7 +299,7 @@ if (!path.normalize(file).startsWith(RES + path.sep) && file !== PLUGIN_MAIN) �
 
 - 「动态取当前分钟构造配置 + 跨分钟自动重试（3 次）」的调度器测试策略务实（64-66、182）。
 - 通过 `SERVERCTL_CONFDIR/DELTADIR` 隔离被测配置，真实调用 uci/ucode 而非 stub，测试价值高。
-- `preview/index.html` 自称“非真实 LuCI 运行时”定位诚实；playwright harness 用真实 LuCI 前端栈 + mock ubus，是前端回归的好底子（建议补一条 A2 密码列行为的回归用例——它正是 preview 与实际页面不一致的实例）。
+- `preview/index.html` 自称“非真实 LuCI 运行时”定位诚实；playwright harness 用真实 LuCI 前端栈 + mock ubus，是前端回归的好底子（建议补一条 A2 密码列行为的回归用例——它正是 preview 与实际页面不一致的实例）。——（Rev.6 注：`preview/index.html` 已从仓库删除，此条保留为历史观察，harness 回归建议仍然有效。）
 - harness 内 vendored LuCI 库副本为上游未改动拷贝，版本随 openwrt2020 主题固定，注意后续手工同步。
 
 ---
