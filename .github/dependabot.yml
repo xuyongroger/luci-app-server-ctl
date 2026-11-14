@@ -1,0 +1,7 @@
+# actions 已钉到 commit SHA（供应链加固），由 Dependabot 定期提 PR 更新 SHA 与版本注释
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

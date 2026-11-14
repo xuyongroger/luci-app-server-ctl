@@ -15,11 +15,11 @@
   - **Ping 测试** —— 检测设备是否在线
   - **SSH 测试** —— 验证 SSH 凭据是否可用
   - **唤醒（Wake）** —— 基于 MAC 地址的 Wake-on-LAN 魔术包
-  - **挂起（Suspend）** —— 通过 SSH 远程挂起
-  - **关机（Power Off）** —— 通过 SSH 远程关机
+  - **挂起（Suspend）** —— 通过 SSH 远程挂起（支持 Linux 与 Windows）
+  - **关机（Power Off）** —— 通过 SSH 远程关机（支持 Linux 与 Windows）
   - 挂起 / 关机会先弹出二次确认，避免误操作
 - **定时任务**：为某台服务器按 **每天 / 每周 / 单次** 计划在指定时间点执行唤醒、挂起或关机；单次任务执行后自动删除。
-- **服务器清单**：集中维护服务器的名称、IP、MAC、SSH 用户名与密码，供手动控制与定时任务复用。
+- **服务器清单**：集中维护服务器的名称、IP、MAC、SSH 用户名与密码、系统类型，供手动控制与定时任务复用。
 - **总开关**：可一键停用全部定时调度，不影响手动控制。
 
 界面位于 LuCI 菜单 **服务 → Server Control**，分为两个标签页：
@@ -30,12 +30,12 @@
 ## 依赖
 
 ```
-+luci-base +etherwake +sshpass +openssh-client
++luci-base +rpcd-mod-ucode +etherwake +sshpass +openssh-client
 ```
 
 - `etherwake`：以二层以太网帧发送 WOL 魔术包（唤醒）。相比 `wakeonlan`（perl 脚本，会拉入整套 perl），`etherwake` 仅依赖 `libc`，更轻量；代价是只在**同一二层广播域**内有效，需指定发送网口（见下 `wol_interface`）
 - `sshpass` + `openssh-client`：非交互式 SSH 登录以执行挂起 / 关机
-- `luci-base`：LuCI 前端基础库；本应用以 **ucode 插件**形式挂入 rpcd，运行时需要 `rpcd-mod-ucode`（通常已随 `luci-base` 的依赖链引入）
+- `luci-base`：LuCI 前端基础库；本应用以 **ucode 插件**形式挂入 rpcd，运行时需要 `rpcd-mod-ucode`（已在包依赖中显式声明，不依赖传递引入）
 
 ## 配置说明（UCI: /etc/config/serverctl）
 
@@ -44,7 +44,7 @@
 ```sh
 config serverctl 'defaults'
     option enabled '1'         # 设为 0 可停用全部定时任务
-    option wol_interface 'eth0'   # 唤醒(WOL)发送魔术包的网络接口；置空则不带 -i
+    option wol_interface 'eth0'   # 唤醒(WOL)发送魔术包的网络接口；缺省 eth0
 ```
 
 > `wol_interface`：`etherwake` 走二层帧，本插件默认从 `eth0` 发送魔术包。若你的目标机不挂在 `eth0`（例如挂在网桥 `br-lan` 或其它网口上），改成对应接口即可：`uci set serverctl.defaults.wol_interface=br-lan && uci commit serverctl`。
@@ -58,6 +58,8 @@ config serverctl 'defaults'
 | `mac` | MAC 地址（WOL 用） | 必填 |
 | `user` | SSH 用户名 | 默认 `root` |
 | `password` | SSH 密码 | 用于 sshpass 登录 |
+| `ssh_port` | SSH 端口 | 可选；缺省或置空走标准端口 `22`，非标准端口（如 `1000`）在此填写 |
+| `os_type` | 系统类型 | `linux`（默认）/ `windows`，决定休眠 / 关机执行的远端命令 |
 
 定时任务条目（Scheduled Tasks）：
 
@@ -71,14 +73,28 @@ config serverctl 'defaults'
 | `hour` / `minute` | 执行时刻 | 0–23 / 0–59 |
 | `enabled` | 是否启用 | 开关 |
 
-> 说明：SSH 密码以明文存于 UCI 配置，且 ssh 使用 `StrictHostKeyChecking=no`（不校验远端主机密钥），请把该设备与管理员访问控制在可信的局域网范围内。
+> 说明：SSH 密码以明文存于 UCI 配置（文件权限仅 root 可读），且 ssh 使用 `StrictHostKeyChecking=no`（不校验远端主机密钥），请把该设备与管理员访问控制在可信的局域网范围内。另请注意：`sshpass` 非交互登录时密码经由命令行参数传递，调用期间本机其他进程理论上可从进程表读到（OpenWrt 默认仅 root 单一可登录/运行进程的账户，实际风险有限）；如需更强隔离，后续可规划改用密钥认证（为服务器条目增加可选私钥字段）。
 
 ## 工作原理
 
 - `rpcd` ucode 后端（`/usr/share/rpcd/ucode/serverctl`）提供 `ping`、`sshtest`（读）与 `wake`、`suspend`、`poweroff`（写）方法，权限由 `/usr/share/rpcd/acl.d` 限定。
 - `procd` 服务 `/etc/init.d/serverctl`（`START=95`）常驻运行调度器 `/usr/bin/serverctl-scheduler`，每 3 秒检查一次；每当进入新的分钟时评估到期任务。
-- 调度使用系统时区（读取 `/etc/TZ`），`defaults.enabled=0` 时调度器跳过所有任务。
-- 远程命令经 `sshpass + ssh` 执行，固定使用 `-o StrictHostKeyChecking=no`、`-o UserKnownHostsFile=/dev/null` 且连接超时 5 秒；唤醒调用 `etherwake -i <接口> <mac>` 在局域网二层发送魔术包（接口取 `defaults.wol_interface`，缺省 `eth0`；显式置空则退化为不带 `-i` 的 `etherwake <mac>`），挂起在远端执行 `systemctl suspend --ignore-inhibitors`（忽略应用持有的休眠抑制锁，保证用户明确指令必然生效），关机执行 `systemctl poweroff`。
+- 调度使用系统时区（服务启动时读取 `/etc/TZ`），`defaults.enabled=0` 时调度器跳过所有任务。**变更系统时区后需 `/etc/init.d/serverctl restart`**，否则已运行的调度器仍按旧时区触发定时任务。
+- 远程命令经 `sshpass + ssh` 执行，固定使用 `-o StrictHostKeyChecking=no`、`-o UserKnownHostsFile=/dev/null` 且连接超时 5 秒；服务器条目设置了 `ssh_port` 时附加 `ssh -p <端口>`（缺省走标准 22）；唤醒调用 `etherwake -i <接口> <mac>` 在局域网二层发送魔术包（接口取 `defaults.wol_interface`，缺省或置空均为 `eth0`——uci 的空值即删除选项，"显式空串"与"缺省"不可区分），按服务器条目的 `os_type` 分发休眠 / 关机命令：Linux（默认）执行 `systemctl suspend --ignore-inhibitors`（忽略应用持有的休眠抑制锁，保证用户明确指令必然生效）与 `systemctl poweroff`；Windows 执行 `rundll32.exe powrprof.dll,SetSuspendState 0,1,0` 与 `shutdown /s /t 0`。
+
+## Windows 目标机设置
+
+要让插件通过 SSH 控制 Windows 10 / 11 电脑，需先在目标机上启用 OpenSSH 服务器：
+
+1. **管理员 PowerShell** 执行 `Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0` 安装（或在 设置 → 应用 → 可选功能 中添加 "OpenSSH 服务器"）；
+2. `Start-Service sshd` 启动服务，`Set-Service -Name sshd -StartupType Automatic` 设为开机自启；
+3. 在插件的服务器条目中填写该机的**本地管理员账户**用户名与**密码**（不能是 PIN / Windows Hello；账户必须设密码，空密码会被拒绝），**系统类型** 选择 `Windows`。非管理员账户的关机 / 休眠通常会被系统以权限不足拒绝，不建议使用。
+
+行为与注意事项：
+
+- **休眠**执行 `rundll32.exe powrprof.dll,SetSuspendState 0,1,0`，请求进入**睡眠**（具体是 S3 还是 S0ix 现代待机由设备决定）。⚠️ 若系统启用了休眠功能（`powercfg /h on`，许多 Win11 设备默认开启），Windows 会转而进入**休眠(S4)**；想要真正的睡眠，请先在目标机执行 `powercfg /h off`。
+- **关机**执行 `shutdown /s /t 0`，立即关机。
+- **WOL 唤醒**：在设备管理器网卡属性中勾选"允许此设备唤醒计算机"；能否从睡眠 / 休眠 / 关机唤醒取决于硬件（不少机器休眠或关机后网卡断电、无法唤醒，睡眠反而可以），以实测为准。
 
 ## 安装
 
@@ -90,6 +106,16 @@ config serverctl 'defaults'
 scp luci-app-server-ctl_*.ipk root@<路由器IP>:/tmp/
 ssh root@<路由器IP> "opkg update && opkg install /tmp/luci-app-server-ctl_*.ipk"
 ```
+
+**服务启用说明**：包内自带的 `/etc/init.d/serverctl` 在安装时会被 OpenWrt 打包框架的默认 postinst 钩子（base-files `/lib/functions.sh` 的 `default_postinst`）自动 `enable` 并立即 `start`（升级时仅在原本已启用的情况下重启），预编译进固件的场景则在构建时即创建 rc.d 自启链接，**无需手动启用**。可用以下命令确认：
+
+```sh
+/etc/init.d/serverctl enabled && echo enabled   # 开机自启状态
+pgrep -f serverctl-scheduler                    # 调度器进程是否在运行
+logread -e serverctl                            # 调度器输出日志
+```
+
+若因环境异常未处于运行状态，手动补救：`/etc/init.d/serverctl enable && /etc/init.d/serverctl start`。
 
 ### 方式二：源码编译
 
@@ -135,7 +161,6 @@ make package/luci-app-server-ctl/compile V=s
 ./tests/run-tests.sh
 ```
 
-- `preview/index.html`：静态预览入口
 - `tests/harness/`：mock rpcd/uci 后端 + 最小 LuCI 前端资源
 
 ## 目录结构
