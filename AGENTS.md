@@ -6,7 +6,6 @@
 - `tests/run-tests.sh`：ucode/uci 行为测试 + 静态检查，需在 Linux 环境运行。
 - `tests/harness/`：浏览器回归用的 mock rpcd/uci 服务（playwright 配套）。
 - `preview/`：不依赖真实设备的浏览器预览页（非真实 LuCI 运行时，定位勿混淆）。
-- `CODE_REVIEW.md`：代码审查报告；修复问题后须同步其各节「状态」行与文末优先级表。
 
 ## 代码风格
 
