@@ -12,6 +12,8 @@
 *.po                 text eol=lf
 *.md                 text eol=lf
 *.svg                text eol=lf
+.gitignore           text eol=lf
+.gitattributes       text eol=lf
 
 # Makefile（含子目录）
 Makefile             text eol=lf
