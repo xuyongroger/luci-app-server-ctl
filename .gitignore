@@ -17,3 +17,10 @@ desktop.ini
 # 临时与日志
 *.tmp
 *.log
+
+# OpenCode 本地会话记忆（不提交）
+/opencode.json
+/MEMORY.md
+
+# 代码审查报告（本地文件，不提交）
+/CODE_REVIEW*.md
